@@ -1,0 +1,1628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>J.A.R.V.I.S. // CORE INTERFACE</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Share+Tech+Mono&display=swap');
+
+  :root{
+    --amber:        #ffaa00;
+    --amber-bright: #ffe0a0;
+    --amber-hot:    #fff2cf;
+    --amber-dim:    #6b4400;
+    --amber-glass:  rgba(255,170,0,0.08);
+    --bg:           #020202;
+    --panel-bg:     rgba(7,8,5,0.84);
+    --red:          #ff3b30;
+    --text-dim:     #8a6a2a;
+  }
+
+  *{ box-sizing:border-box; margin:0; padding:0; }
+
+  html,body{
+    width:100%; height:100%; overflow:hidden;
+    background:
+      radial-gradient(ellipse at 50% 45%, #0b0906 0%, #050403 45%, #000000 100%);
+    font-family:'Share Tech Mono', monospace;
+    color: var(--amber);
+    -webkit-font-smoothing:antialiased;
+  }
+
+  #stage{ position:fixed; inset:0; cursor: grab; }
+  #stage.dragging{ cursor: grabbing; }
+  #stage canvas{ display:block; width:100%; height:100%; }
+
+  .hud{ position:fixed; inset:0; pointer-events:none; z-index:10; }
+
+  /* ---------- corner brackets ---------- */
+  .bracket{
+    position:absolute; width:46px; height:46px;
+    border: 1.5px solid var(--amber);
+    opacity:0.45;
+  }
+  .bracket.tl{ top:18px; left:18px; border-right:none; border-bottom:none; }
+  .bracket.tr{ top:18px; right:18px; border-left:none; border-bottom:none; }
+  .bracket.bl{ bottom:18px; left:18px; border-right:none; border-top:none; }
+  .bracket.br{ bottom:18px; right:18px; border-left:none; border-top:none; }
+
+  /* ---------- top bar ---------- */
+  .topbar{
+    position:absolute; top:0; left:0; right:0;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    padding:26px 70px;
+  }
+  .brand{ letter-spacing:6px; }
+  .brand h1{
+    font-family:'Orbitron', sans-serif; font-weight:900; font-size:22px;
+    color: var(--amber-bright);
+    text-shadow: 0 0 14px rgba(255,180,60,0.6);
+  }
+  .brand p{
+    margin-top:6px; font-size:10px; letter-spacing:3px; color: var(--text-dim);
+  }
+  .clock{ text-align:right; }
+  .clock .time{
+    font-family:'Orbitron', sans-serif; font-size:26px; font-weight:700;
+    color:var(--amber-bright); letter-spacing:2px;
+    text-shadow: 0 0 12px rgba(255,180,60,0.55);
+  }
+  .clock .date{ font-size:11px; letter-spacing:2px; color:var(--text-dim); margin-top:4px; }
+
+  .status-strip{
+    position:absolute; top:96px; left:70px;
+    display:flex; gap:22px; font-size:10px; letter-spacing:2px; color:var(--text-dim);
+  }
+  .status-strip span.dot{
+    display:inline-block; width:6px; height:6px; border-radius:50%;
+    background:var(--amber); margin-right:6px; box-shadow:0 0 6px var(--amber);
+    animation: pulse 1.8s ease-in-out infinite;
+  }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:0.25;} }
+
+  .telemetry{
+    position:absolute; bottom:26px; left:70px; right:70px;
+    display:flex; gap:40px; align-items:flex-end;
+  }
+  .meter{ flex:1; max-width:220px; }
+  .meter .label{ font-size:10px; letter-spacing:2px; color:var(--text-dim); display:flex; justify-content:space-between; margin-bottom:6px; }
+  .meter .track{ height:4px; background:rgba(255,170,0,0.12); position:relative; overflow:hidden; }
+  .meter .fill{ position:absolute; top:0; left:0; height:100%; background:linear-gradient(90deg, var(--amber-dim), var(--amber)); box-shadow:0 0 8px var(--amber); transition:width 0.6s ease; }
+
+  .hint{
+    position:absolute; bottom:78px; left:50%; transform:translateX(-50%);
+    font-size:10px; letter-spacing:3px; color:var(--text-dim);
+    animation: fadeHint 5s ease forwards;
+  }
+  @keyframes fadeHint{ 0%{opacity:1;} 70%{opacity:1;} 100%{opacity:0;} }
+
+  .scan-count{
+    position:absolute; top:96px; right:70px; text-align:right;
+    font-size:10px; letter-spacing:2px; color:var(--text-dim);
+  }
+  .scan-count b{ color:var(--amber-bright); }
+
+  #operatorBadge{
+    position:absolute; top:26px; left:50%; transform:translateX(-50%);
+    display:flex; align-items:center; gap:10px;
+    font-size:10px; letter-spacing:2px; color:var(--text-dim);
+    border:1px solid var(--amber-dim); padding:6px 14px;
+    background:rgba(7,8,5,0.6);
+  }
+  #operatorBadge .op-name{ color:var(--amber-bright); font-weight:700; }
+  #operatorBadge button{
+    background:none; border:1px solid var(--amber-dim); color:var(--text-dim);
+    font-family:'Share Tech Mono', monospace; font-size:9px; letter-spacing:1.5px;
+    padding:3px 8px; cursor:pointer; margin-left:4px;
+  }
+  #operatorBadge button:hover{ color:var(--amber-bright); border-color:var(--amber); }
+
+  /* ---------- gesture / optical-sensor panel ---------- */
+  #gesturePanel{
+    position:absolute; left:70px; bottom:80px;
+    width:200px; pointer-events:auto;
+    border:1px solid var(--amber-dim);
+    background:rgba(7,8,5,0.78);
+    padding:10px;
+  }
+  #gesturePanel .gp-head{
+    display:flex; justify-content:space-between; align-items:center;
+    font-size:9.5px; letter-spacing:2px; color:var(--text-dim); margin-bottom:8px;
+  }
+  #gesturePanel .gp-head b{ color:var(--amber-bright); }
+  #gestureCanvas{
+    width:100%; height:120px; display:block;
+    background:#050402; border:1px solid rgba(255,170,0,0.25);
+    transform: scaleX(-1); /* mirror for natural selfie view */
+  }
+  #gestureStatus{
+    margin-top:8px; font-size:10px; letter-spacing:1.5px; color:var(--amber-bright);
+    min-height:14px;
+  }
+  #gestureToggle{
+    margin-top:8px; width:100%; padding:7px 0;
+    background:none; border:1px solid var(--amber-dim); color:var(--amber);
+    font-family:'Share Tech Mono', monospace; font-size:9.5px; letter-spacing:2px;
+    cursor:pointer;
+  }
+  #gestureToggle:hover{ background:var(--amber-glass); border-color:var(--amber); }
+  #gestureToggle.active{ color:var(--amber-bright); border-color:var(--amber); }
+  #gestureNote{
+    margin-top:6px; font-size:8.5px; letter-spacing:1px; color:var(--text-dim); line-height:1.5;
+    display:none;
+  }
+  #gestureNote.show{ display:block; }
+
+  @media (max-width: 900px){
+    #gesturePanel{ display:none; } /* keep primary view clean on small screens; mouse/touch still works */
+  }
+
+  #tooltip{
+    position:fixed; pointer-events:none; z-index:20;
+    font-size:10px; letter-spacing:1px; color:var(--amber-bright);
+    background:rgba(6,7,4,0.9); border:1px solid var(--amber-dim);
+    padding:5px 10px; white-space:nowrap; display:none;
+    text-transform:uppercase;
+  }
+
+  #handCursor{
+    position:fixed; z-index:22; pointer-events:none;
+    width:34px; height:34px; display:none;
+    transform:translate(-50%,-50%);
+  }
+  #handCursor svg{ width:100%; height:100%; }
+  #handCursor.locked circle.ring{ stroke:#ff3b30; }
+  #handCursor .dwell-arc{ stroke:#ffe0a0; }
+
+  #panel{
+    position:fixed; top:0; right:-420px; width:400px; height:100%;
+    background:var(--panel-bg);
+    border-left:1px solid var(--amber-dim);
+    backdrop-filter: blur(6px);
+    z-index:30; pointer-events:auto;
+    transition: right 0.5s cubic-bezier(.22,.9,.3,1);
+    padding:90px 34px 34px 34px;
+    overflow-y:auto;
+  }
+  #panel.open{ right:0; }
+  #panel .close-btn{
+    position:absolute; top:26px; right:28px;
+    width:30px; height:30px; border:1px solid var(--amber-dim);
+    background:none; color:var(--amber); font-size:14px; cursor:pointer;
+    font-family:'Share Tech Mono', monospace;
+  }
+  #panel .close-btn:hover{ background:var(--amber-glass); border-color:var(--amber); }
+
+  #panel .eyebrow{ font-size:10px; letter-spacing:3px; color:var(--text-dim); }
+  #panel .eyebrow b{ color:var(--amber); }
+  #panel h2{
+    font-family:'Orbitron', sans-serif; font-size:23px; font-weight:700;
+    color:var(--amber-bright); margin:10px 0 4px 0; letter-spacing:1px;
+    text-shadow:0 0 10px rgba(255,180,60,0.4);
+  }
+  #panel .subid{ font-size:11px; color:var(--text-dim); letter-spacing:2px; margin-bottom:20px; }
+
+  .status-pill{
+    display:inline-flex; align-items:center; gap:6px;
+    font-size:10px; letter-spacing:2px; padding:5px 12px;
+    border:1px solid var(--amber-dim); margin-bottom:22px;
+  }
+  .status-pill.online{ color:var(--amber-bright); }
+  .status-pill.warning{ color:var(--red); border-color:rgba(255,59,48,0.5); }
+  .status-pill .dot{ width:6px; height:6px; border-radius:50%; background:currentColor; box-shadow:0 0 6px currentColor; }
+
+  #panel .desc{ font-size:12.5px; line-height:1.7; color:#f0dfae; margin-bottom:26px; }
+
+  .stat-row{ margin-bottom:16px; }
+  .stat-row .lbl{ display:flex; justify-content:space-between; font-size:10px; letter-spacing:2px; color:var(--text-dim); margin-bottom:6px; }
+  .stat-row .lbl b{ color:var(--amber-bright); font-size:11px; }
+  .stat-row .track{ height:5px; background:rgba(255,170,0,0.1); }
+  .stat-row .fill{ height:100%; background:linear-gradient(90deg,var(--amber-dim),var(--amber)); box-shadow:0 0 6px var(--amber); }
+
+  .divider{ border-top:1px solid rgba(255,170,0,0.15); margin:22px 0; }
+
+  .log{ font-size:10.5px; color:var(--text-dim); line-height:1.9; }
+  .log span{ color:var(--amber); }
+
+  ::-webkit-scrollbar{ width:6px; }
+  ::-webkit-scrollbar-thumb{ background:var(--amber-dim); }
+  ::-webkit-scrollbar-track{ background:transparent; }
+
+  @media (max-width: 720px){
+    .topbar{ padding:18px 22px; }
+    .status-strip{ left:22px; top:80px; flex-wrap:wrap; }
+    .scan-count{ right:22px; top:80px; }
+    .telemetry{ left:22px; right:22px; flex-wrap:wrap; gap:16px; }
+    #panel{ width:100%; right:-100%; padding:80px 22px 22px 22px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="stage"></div>
+<div id="tooltip"></div>
+<div id="handCursor">
+  <svg viewBox="0 0 34 34">
+    <circle class="ring" cx="17" cy="17" r="10" fill="none" stroke="#ffaa00" stroke-width="1.5" opacity="0.8"/>
+    <circle class="dwell-arc" cx="17" cy="17" r="14" fill="none" stroke-width="2"
+            stroke-dasharray="88" stroke-dashoffset="88" transform="rotate(-90 17 17)"/>
+    <circle cx="17" cy="17" r="1.6" fill="#fff2cf"/>
+  </svg>
+</div>
+
+<div class="hud">
+  <div class="bracket tl"></div>
+  <div class="bracket tr"></div>
+  <div class="bracket bl"></div>
+  <div class="bracket br"></div>
+
+  <div class="topbar">
+    <div class="brand">
+      <h1>J.A.R.V.I.S.</h1>
+      <p>JUST A RATHER VERY INTELLIGENT SYSTEM</p>
+    </div>
+    <div class="clock">
+      <div class="time" id="clockTime">00:00:00</div>
+      <div class="date" id="clockDate">—</div>
+    </div>
+  </div>
+
+  <div id="operatorBadge" style="pointer-events:auto;">
+    <span class="op-label">OPERATOR</span>
+    <span class="op-name" id="operatorName">GUEST</span>
+    <button id="signOutBtn" title="Sign out">SIGN OUT</button>
+  </div>
+
+  <div class="status-strip">
+    <span><i class="dot"></i>CORE ONLINE</span>
+    <span><i class="dot"></i>ALL SYSTEMS NOMINAL</span>
+    <span><i class="dot"></i>SECURE LINK</span>
+  </div>
+
+  <div class="scan-count">NODES TRACKED&nbsp; <b id="nodeCount">00</b></div>
+
+  <div class="hint">DRAG NODES OR THE SPHERE · SCROLL · CLICK &nbsp;—&nbsp; OR &nbsp;—&nbsp; PALM ROTATES · PINCH ZOOMS · AIM+PINCH GRABS A NODE · FIST CLOSES</div>
+
+  <div id="gesturePanel">
+    <div class="gp-head"><span>OPTICAL SENSOR</span><b id="gpHandState">OFFLINE</b></div>
+    <canvas id="gestureCanvas" width="200" height="120"></canvas>
+    <div id="gestureStatus">STANDBY</div>
+    <button id="gestureToggle">ENABLE GESTURE CONTROL</button>
+    <div id="gestureNote">Camera blocked or unavailable here. Download this file and open it directly in a browser tab (served over http/https, not double-clicked) to grant webcam access.</div>
+  </div>
+
+  <div class="telemetry">
+    <div class="meter">
+      <div class="label"><span>POWER CORE</span><span id="mPower">--</span></div>
+      <div class="track"><div class="fill" id="mPowerFill" style="width:0%"></div></div>
+    </div>
+    <div class="meter">
+      <div class="label"><span>NETWORK LOAD</span><span id="mNet">--</span></div>
+      <div class="track"><div class="fill" id="mNetFill" style="width:0%"></div></div>
+    </div>
+    <div class="meter">
+      <div class="label"><span>PROCESSOR</span><span id="mCpu">--</span></div>
+      <div class="track"><div class="fill" id="mCpuFill" style="width:0%"></div></div>
+    </div>
+  </div>
+</div>
+
+<div id="panel">
+  <button class="close-btn" id="closeBtn">&#10005;</button>
+  <div class="eyebrow">NODE FILE <b id="pId">// 000</b></div>
+  <h2 id="pName">—</h2>
+  <div class="subid" id="pCategory">—</div>
+  <div class="status-pill" id="pStatus"><span class="dot"></span><span id="pStatusText">—</span></div>
+  <div class="desc" id="pDesc">—</div>
+
+  <div class="stat-row">
+    <div class="lbl"><span>INTEGRITY</span><b id="sIntegrityVal">--</b></div>
+    <div class="track"><div class="fill" id="sIntegrity" style="width:0%"></div></div>
+  </div>
+  <div class="stat-row">
+    <div class="lbl"><span>THROUGHPUT</span><b id="sThroughputVal">--</b></div>
+    <div class="track"><div class="fill" id="sThroughput" style="width:0%"></div></div>
+  </div>
+  <div class="stat-row">
+    <div class="lbl"><span>SIGNAL</span><b id="sSignalVal">--</b></div>
+    <div class="track"><div class="fill" id="sSignal" style="width:0%"></div></div>
+  </div>
+
+  <div class="divider"></div>
+  <div class="log" id="pLog"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script>
+(function(){
+
+  /* ============================================================
+     NODE DATA — 42 tracked systems
+  ============================================================ */
+  const NAMES = [
+    ["ARC REACTOR CORE","POWER GENERATION"],
+    ["SECONDARY POWER CELL","POWER GENERATION"],
+    ["POWER DISTRIBUTION BUS","POWER GENERATION"],
+    ["SUIT-UP SEQUENCE","MECHANICAL / DEPLOY"],
+    ["MARK VII ASSEMBLY","MECHANICAL / DEPLOY"],
+    ["NANO-PLATING ARRAY","MECHANICAL / DEPLOY"],
+    ["FLIGHT STABILIZERS","PROPULSION"],
+    ["REPULSOR CALIBRATION","PROPULSION"],
+    ["THRUST VECTORING","PROPULSION"],
+    ["GLOBAL COMMS ARRAY","COMMUNICATIONS"],
+    ["ENCRYPTED UPLINK","COMMUNICATIONS"],
+    ["AVENGERS CHANNEL","COMMUNICATIONS"],
+    ["BIOMETRIC MONITOR","LIFE SUPPORT"],
+    ["OXYGEN REGULATION","LIFE SUPPORT"],
+    ["THERMAL REGULATION","LIFE SUPPORT"],
+    ["THREAT ANALYSIS","DEFENSE INTELLIGENCE"],
+    ["HOSTILE SIGNATURE SCAN","DEFENSE INTELLIGENCE"],
+    ["PERIMETER DEFENSE GRID","DEFENSE INTELLIGENCE"],
+    ["ENVIRONMENTAL SENSORS","SENSING"],
+    ["ATMOSPHERIC ANALYSIS","SENSING"],
+    ["ACOUSTIC SURVEILLANCE","SENSING"],
+    ["RADAR SWEEP","SENSING"],
+    ["SATELLITE UPLINK","NAVIGATION"],
+    ["GPS TRIANGULATION","NAVIGATION"],
+    ["FLIGHT PATH PLOTTING","NAVIGATION"],
+    ["AI CORE PROCESSES","COGNITION"],
+    ["NATURAL LANGUAGE ENGINE","COGNITION"],
+    ["PREDICTIVE MODELING","COGNITION"],
+    ["SECURITY PROTOCOLS","ACCESS CONTROL"],
+    ["WORKSHOP LOCKDOWN","ACCESS CONTROL"],
+    ["IDENTITY VERIFICATION","ACCESS CONTROL"],
+    ["HOLOGRAPHIC DISPLAY","INTERFACE"],
+    ["GESTURE CONTROL","INTERFACE"],
+    ["WORKSHOP DIAGNOSTICS","MAINTENANCE"],
+    ["ACTUATOR CALIBRATION","MAINTENANCE"],
+    ["WEATHER TRACKING","SENSING"],
+    ["STORM CELL FORECAST","SENSING"],
+    ["REMOTE PILOT LINK","CONTROL"],
+    ["AUTOPILOT OVERRIDE","CONTROL"],
+    ["STARK INDUSTRIES LEDGER","LOGISTICS"],
+    ["SUPPLY CHAIN TRACKING","LOGISTICS"],
+    ["STRUCTURAL INTEGRITY","DIAGNOSTICS"],
+    ["CYBERSECURITY FIREWALL","DEFENSE INTELLIGENCE"],
+  ];
+
+  const NODE_DATA = NAMES.map(([name,category], i)=>{
+    const seed = (i*57)%100;
+    const status = (i===15 || i===33 || i===40) ? "warning" : "online";
+    const descs = {
+      "POWER GENERATION":"Reactor and cell telemetry feeding continuous clean output to every downstream subsystem.",
+      "MECHANICAL / DEPLOY":"Servo and plating coordination tracked in real time during rapid assembly sequences.",
+      "PROPULSION":"Repulsor vector output balanced continuously to maintain stable attitude in flight.",
+      "COMMUNICATIONS":"Encrypted relay spanning satellite and terrestrial infrastructure for secure correspondence.",
+      "LIFE SUPPORT":"Vital sign and environmental regulation ensuring pilot safety across all conditions.",
+      "DEFENSE INTELLIGENCE":"Pattern recognition scanning surrounding telemetry for anomalies and hostile signatures.",
+      "SENSING":"Multi-spectrum sampling of the local operating envelope, updated on a continuous cycle.",
+      "NAVIGATION":"Orbital and terrestrial reference feeds used for precision positioning and route planning.",
+      "COGNITION":"Central reasoning cluster coordinating subsystem priorities and conversational interaction.",
+      "ACCESS CONTROL":"Layered authentication governing facility access and remote command authorization.",
+      "INTERFACE":"Volumetric projection and gesture recognition rendering schematics directly into open air.",
+      "MAINTENANCE":"Continuous self-check of fabrication tools, actuators, and suit racks.",
+      "CONTROL":"Failsafe and override channel allowing control to be reassigned in emergency scenarios.",
+      "LOGISTICS":"Resource and supply tracking across facilities, projects, and active deployments.",
+      "DIAGNOSTICS":"Ongoing structural and mechanical health assessment across load-bearing components."
+    };
+    return {
+      id: String(i+1).padStart(3,"0"),
+      name, category, status,
+      desc: descs[category] || "Subsystem telemetry nominal.",
+      integrity:  status==="warning" ? 52 + (seed%18) : 86 + (seed%13),
+      throughput: 58 + (seed%37),
+      signal:     status==="warning" ? 38 + (seed%22) : 74 + (seed%22),
+    };
+  });
+
+  document.getElementById("nodeCount").textContent = String(NODE_DATA.length).padStart(2,"0");
+
+  /* ============================================================
+     SESSION — operator identity handed off from index.html
+  ============================================================ */
+  (function initSession(){
+    const params = new URLSearchParams(window.location.search);
+    let name = params.get('user');
+    if(!name){
+      try{ name = localStorage.getItem('jarvis_active_user'); }catch(e){ name = null; }
+    }
+    document.getElementById('operatorName').textContent = name ? name.toUpperCase() : 'GUEST';
+
+    document.getElementById('signOutBtn').addEventListener('click', ()=>{
+      try{ localStorage.removeItem('jarvis_active_user'); }catch(e){}
+      window.location.href = 'index.html';
+    });
+  })();
+
+  /* ============================================================
+     THREE.JS SCENE
+  ============================================================ */
+  const stage = document.getElementById("stage");
+  const scene = new THREE.Scene();
+
+  const camera = new THREE.PerspectiveCamera(48, window.innerWidth/window.innerHeight, 0.1, 4000);
+  camera.position.set(0,0,340);
+
+  const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.35;
+  stage.appendChild(renderer.domElement);
+
+  scene.add(new THREE.AmbientLight(0x2a1c08, 1.0));
+  const coreLight = new THREE.PointLight(0xffaa00, 3.4, 1000, 2);
+  coreLight.position.set(0,0,0);
+  scene.add(coreLight);
+
+  /* ---------- faint starfield ---------- */
+  {
+    const starGeo = new THREE.BufferGeometry();
+    const starCount = 900;
+    const positions = new Float32Array(starCount*3);
+    for(let i=0;i<starCount;i++){
+      const r = 900 + Math.random()*700;
+      const theta = Math.random()*Math.PI*2;
+      const phi = Math.acos(2*Math.random()-1);
+      positions[i*3]   = r*Math.sin(phi)*Math.cos(theta);
+      positions[i*3+1] = r*Math.sin(phi)*Math.sin(theta);
+      positions[i*3+2] = r*Math.cos(phi);
+    }
+    starGeo.setAttribute('position', new THREE.BufferAttribute(positions,3));
+    const starMat = new THREE.PointsMaterial({ color:0xffdca0, size:1.1, transparent:true, opacity:0.35 });
+    scene.add(new THREE.Points(starGeo, starMat));
+  }
+
+  /* ---------- core group (rotates with drag) ---------- */
+  const core = new THREE.Group();
+  scene.add(core);
+
+  // generic registry for the boot/intro sequence: any material pushed
+  // here starts at opacity 0 and eases up to targetOpacity
+  const introFadeMaterials = [];
+
+  const R = 130;
+
+  /* ---------- glow texture ---------- */
+  function makeGlowTexture(hard){
+    const size = 128;
+    const cnv = document.createElement('canvas');
+    cnv.width = cnv.height = size;
+    const ctx = cnv.getContext('2d');
+    const grad = ctx.createRadialGradient(size/2,size/2,0,size/2,size/2,size/2);
+    if(hard){
+      grad.addColorStop(0, 'rgba(255,250,230,1)');
+      grad.addColorStop(0.25, 'rgba(255,200,90,0.95)');
+      grad.addColorStop(1, 'rgba(255,170,0,0)');
+    } else {
+      grad.addColorStop(0, 'rgba(255,225,150,0.9)');
+      grad.addColorStop(0.4, 'rgba(255,170,0,0.55)');
+      grad.addColorStop(1, 'rgba(255,170,0,0)');
+    }
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,size,size);
+    return new THREE.CanvasTexture(cnv);
+  }
+  const glowTexSoft = makeGlowTexture(false);
+  const glowTexHard = makeGlowTexture(true);
+
+  /* ---------- intense central core ---------- */
+  let coreSprite, coreDot;
+  {
+    coreSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTexHard, color:0xffdd88, transparent:true, opacity:1,
+      blending: THREE.AdditiveBlending, depthWrite:false
+    }));
+    coreSprite.scale.set(0.5,0.5,1);
+    core.add(coreSprite);
+
+    coreDot = new THREE.Mesh(
+      new THREE.SphereGeometry(4.5, 16, 16),
+      new THREE.MeshBasicMaterial({ color:0xfff6da })
+    );
+    coreDot.scale.setScalar(0.1);
+    core.add(coreDot);
+  }
+
+  /* ---------- tangled wire sphere: many random great-circle rings ---------- */
+  function randomGreatCircle(radius, segments){
+    // build a circle in local XY plane, then apply a random rotation
+    const pts = [];
+    for(let i=0;i<=segments;i++){
+      const a = (i/segments)*Math.PI*2;
+      pts.push(new THREE.Vector3(Math.cos(a)*radius, Math.sin(a)*radius, 0));
+    }
+    const euler = new THREE.Euler(
+      Math.random()*Math.PI*2,
+      Math.random()*Math.PI*2,
+      Math.random()*Math.PI*2
+    );
+    const m = new THREE.Matrix4().makeRotationFromEuler(euler);
+    pts.forEach(p => p.applyMatrix4(m));
+    return pts;
+  }
+
+  const wireRings = []; // {mesh, targetOpacity} — animated in during the boot/intro sequence
+
+  const RING_COUNT = 58;
+  for(let i=0;i<RING_COUNT;i++){
+    const radiusJitter = R * (0.86 + Math.random()*0.22);
+    const pts = randomGreatCircle(radiusJitter, 64);
+    const geo = new THREE.BufferGeometry().setFromPoints(pts);
+    const bright = Math.random() < 0.12;
+    const targetOpacity = bright ? 0.5 : (0.05 + Math.random()*0.14);
+    const mat = new THREE.LineBasicMaterial({
+      color: bright ? 0xffe6ad : 0xffaa00,
+      transparent:true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite:false
+    });
+    const mesh = new THREE.LineLoop(geo, mat);
+    mesh.scale.setScalar(0.15);
+    core.add(mesh);
+    wireRings.push({ mesh, targetOpacity, delay: Math.random()*0.7 });
+  }
+
+  /* ---------- a few larger broken halo arcs (extend past sphere edge) ---------- */
+  const HALO_COUNT = 6;
+  for(let i=0;i<HALO_COUNT;i++){
+    const radius = R * (1.25 + Math.random()*0.4);
+    const segments = 48;
+    const start = Math.random()*Math.PI*2;
+    const sweep = Math.PI * (0.5 + Math.random()*0.9);
+    const pts = [];
+    for(let s=0;s<=segments;s++){
+      const a = start + (s/segments)*sweep;
+      pts.push(new THREE.Vector3(Math.cos(a)*radius, Math.sin(a)*radius, 0));
+    }
+    const euler = new THREE.Euler(Math.random()*Math.PI*2, Math.random()*Math.PI*2, Math.random()*Math.PI*2);
+    const m = new THREE.Matrix4().makeRotationFromEuler(euler);
+    pts.forEach(p => p.applyMatrix4(m));
+    const geo = new THREE.BufferGeometry().setFromPoints(pts);
+    const targetOpacity = 0.3 + Math.random()*0.25;
+    const mat = new THREE.LineBasicMaterial({
+      color:0xffdca0, transparent:true, opacity:0,
+      blending: THREE.AdditiveBlending, depthWrite:false
+    });
+    const mesh = new THREE.Line(geo, mat);
+    mesh.scale.setScalar(0.15);
+    core.add(mesh);
+    wireRings.push({ mesh, targetOpacity, delay: 0.3 + Math.random()*0.5 });
+  }
+
+  /* ---------- two slim accent rings, counter-rotating, for extra HUD depth ---------- */
+  const accentRings = [];
+  [
+    { r: R*1.55, tilt:[1.1, 0.3, 0], speed: 0.00035, color:0xffe6ad, opacity:0.22 },
+    { r: R*1.75, tilt:[0.5, 1.3, 0.8], speed:-0.00022, color:0xffaa00, opacity:0.16 },
+  ].forEach(cfg=>{
+    const geo = new THREE.TorusGeometry(cfg.r, 0.35, 8, 128);
+    const mat = new THREE.MeshBasicMaterial({ color:cfg.color, transparent:true, opacity:0, blending:THREE.AdditiveBlending, depthWrite:false });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.set(cfg.tilt[0], cfg.tilt[1], cfg.tilt[2]);
+    mesh.scale.setScalar(0.15);
+    scene.add(mesh);
+    accentRings.push({ mesh, speed:cfg.speed, targetOpacity:cfg.opacity });
+  });
+
+  /* ---------- fibonacci sphere placement ---------- */
+  function fibonacciSphere(count, radius){
+    const pts = [];
+    const gAngle = Math.PI * (3 - Math.sqrt(5));
+    for(let i=0;i<count;i++){
+      const y = 1 - (i/(count-1))*2;
+      const rAtY = Math.sqrt(1 - y*y);
+      const theta = gAngle * i;
+      const x = Math.cos(theta)*rAtY;
+      const z = Math.sin(theta)*rAtY;
+      pts.push(new THREE.Vector3(x*radius, y*radius, z*radius));
+    }
+    return pts;
+  }
+
+  /* ---------- dense decorative circuit-light flecks (non-interactive) ---------- */
+  {
+    const DECOR_COUNT = 260;
+    const decorPositions = fibonacciSphere(DECOR_COUNT, R).map(p => {
+      // jitter slightly off-surface for a "wire mesh detail" look
+      const jitter = 0.94 + Math.random()*0.12;
+      return p.clone().multiplyScalar(jitter);
+    });
+    const geo = new THREE.BufferGeometry();
+    const flat = new Float32Array(DECOR_COUNT*3);
+    decorPositions.forEach((p,i)=>{ flat[i*3]=p.x; flat[i*3+1]=p.y; flat[i*3+2]=p.z; });
+    geo.setAttribute('position', new THREE.BufferAttribute(flat,3));
+    const mat = new THREE.PointsMaterial({
+      color:0xffcf7a, size:1.6, map: glowTexSoft, transparent:true,
+      opacity:0.85, blending: THREE.AdditiveBlending, depthWrite:false, sizeAttenuation:true
+    });
+    core.add(new THREE.Points(geo, mat));
+    introFadeMaterials.push({ material: mat, targetOpacity: mat.opacity });
+    mat.opacity = 0;
+
+    // sparse short traces between nearby decor points (circuit look)
+    const traceGeoPts = [];
+    for(let i=0;i<DECOR_COUNT;i++){
+      if(Math.random() > 0.35) continue;
+      let nearestJ = -1, nearestD = Infinity;
+      for(let j=0;j<DECOR_COUNT;j++){
+        if(i===j) continue;
+        const d = decorPositions[i].distanceTo(decorPositions[j]);
+        if(d < nearestD){ nearestD = d; nearestJ = j; }
+      }
+      if(nearestJ>=0){
+        traceGeoPts.push(decorPositions[i].x, decorPositions[i].y, decorPositions[i].z);
+        traceGeoPts.push(decorPositions[nearestJ].x, decorPositions[nearestJ].y, decorPositions[nearestJ].z);
+      }
+    }
+    const traceGeo = new THREE.BufferGeometry();
+    traceGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(traceGeoPts),3));
+    const traceMat = new THREE.LineBasicMaterial({
+      color:0xffaa00, transparent:true, opacity:0.16,
+      blending: THREE.AdditiveBlending, depthWrite:false
+    });
+    core.add(new THREE.LineSegments(traceGeo, traceMat));
+    introFadeMaterials.push({ material: traceMat, targetOpacity: traceMat.opacity });
+    traceMat.opacity = 0;
+  }
+
+  /* ---------- clickable nodes ---------- */
+  const nodePositions = fibonacciSphere(NODE_DATA.length, R * 1.005);
+  const nodeMeshes = [];
+  const nodeGlows = [];
+
+  NODE_DATA.forEach((data, i)=>{
+    const pos = nodePositions[i];
+    const isWarn = data.status === "warning";
+
+    const geo = new THREE.SphereGeometry(2.6, 12, 12);
+    const mat = new THREE.MeshBasicMaterial({ color: isWarn ? 0xff3b30 : 0xfff2cf });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(pos);
+    mesh.userData = { index:i };
+    mesh.scale.setScalar(0.001);
+    core.add(mesh);
+    nodeMeshes.push(mesh);
+
+    const spriteMat = new THREE.SpriteMaterial({
+      map: glowTexSoft, color: isWarn?0xff3b30:0xffaa00, transparent:true,
+      opacity:0.9, blending: THREE.AdditiveBlending, depthWrite:false
+    });
+    const sprite = new THREE.Sprite(spriteMat);
+    sprite.scale.set(0.001,0.001,1);
+    sprite.position.copy(pos);
+    core.add(sprite);
+    nodeGlows.push(sprite);
+  });
+  const nodeIntroDelay = NODE_DATA.map(()=> Math.random()*0.55);
+
+  /* ---------- connecting lines between nearest clickable nodes ----------
+     Positions are kept in a live BufferGeometry, and every vertex index
+     that references a given node is recorded so drag-and-drop can rewrite
+     just that node's edges in place instead of rebuilding the mesh. ---------- */
+  const nodeEdges = [];             // [{a, b}] node-index pairs, for pulse animation
+  const nodeLineVertexIndices = nodePositions.map(()=>[]);
+  let nodeLinesGeo = null;
+
+  {
+    const lineGeoPoints = [];
+    const K = 2;
+    let vIdx = 0;
+    for(let i=0;i<nodePositions.length;i++){
+      const dists = [];
+      for(let j=0;j<nodePositions.length;j++){
+        if(i===j) continue;
+        dists.push({ j, d: nodePositions[i].distanceTo(nodePositions[j]) });
+      }
+      dists.sort((a,b)=>a.d-b.d);
+      for(let k=0;k<K;k++){
+        const j = dists[k].j;
+        nodeEdges.push({ a:i, b:j });
+        lineGeoPoints.push(nodePositions[i].x, nodePositions[i].y, nodePositions[i].z);
+        nodeLineVertexIndices[i].push(vIdx); vIdx++;
+        lineGeoPoints.push(nodePositions[j].x, nodePositions[j].y, nodePositions[j].z);
+        nodeLineVertexIndices[j].push(vIdx); vIdx++;
+      }
+    }
+    nodeLinesGeo = new THREE.BufferGeometry();
+    nodeLinesGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(lineGeoPoints),3));
+    const lineMat = new THREE.LineBasicMaterial({
+      color:0xffcf7a, transparent:true, opacity:0.22,
+      blending: THREE.AdditiveBlending, depthWrite:false
+    });
+    core.add(new THREE.LineSegments(nodeLinesGeo, lineMat));
+    introFadeMaterials.push({ material: lineMat, targetOpacity: lineMat.opacity });
+    lineMat.opacity = 0;
+  }
+
+  // move a node (and everything visually tied to it) to a new LOCAL
+  // (core-space) position — used by both mouse drag and gesture grab
+  function setNodePosition(idx, localPos){
+    nodeMeshes[idx].position.copy(localPos);
+    nodeGlows[idx].position.copy(localPos);
+    nodePositions[idx].copy(localPos);
+    const posAttr = nodeLinesGeo.attributes.position;
+    nodeLineVertexIndices[idx].forEach(v=>{
+      posAttr.array[v*3]   = localPos.x;
+      posAttr.array[v*3+1] = localPos.y;
+      posAttr.array[v*3+2] = localPos.z;
+    });
+    posAttr.needsUpdate = true;
+  }
+
+  // project a screen point onto the camera-facing plane that currently
+  // passes through a given node, and return the hit point in the core
+  // group's LOCAL space — this is what makes a dragged node track your
+  // cursor/fingertip naturally in 3D regardless of sphere rotation
+  const dragPlane = new THREE.Plane();
+  const dragHitPoint = new THREE.Vector3();
+  const dragWorldPos = new THREE.Vector3();
+  const dragCamDir = new THREE.Vector3();
+  function projectToNodeDragPlane(ndcX, ndcY, nodeIdx){
+    nodeMeshes[nodeIdx].getWorldPosition(dragWorldPos);
+    camera.getWorldDirection(dragCamDir);
+    dragPlane.setFromNormalAndCoplanarPoint(dragCamDir, dragWorldPos);
+    mouseNDCForDrag.set(ndcX, ndcY);
+    raycaster.setFromCamera(mouseNDCForDrag, camera);
+    const hit = raycaster.ray.intersectPlane(dragPlane, dragHitPoint);
+    if(!hit) return null;
+    return core.worldToLocal(dragHitPoint.clone());
+  }
+  const mouseNDCForDrag = new THREE.Vector2();
+
+  // small expanding-ring "ping" shown on select/drop for extra HUD flair
+  const pings = [];
+  function spawnPing(localPos, color){
+    const mat = new THREE.SpriteMaterial({
+      map: glowTexHard, color: color || 0xffe0a0, transparent:true,
+      opacity:0.9, blending: THREE.AdditiveBlending, depthWrite:false
+    });
+    const sprite = new THREE.Sprite(mat);
+    sprite.position.copy(localPos);
+    sprite.scale.set(6,6,1);
+    core.add(sprite);
+    pings.push({ sprite, start: performance.now() });
+  }
+
+  /* ---------- traveling data-pulse particles along the node network ----------
+     Each pulse rides a random edge from nodeEdges by reading the two
+     endpoint nodes' LIVE mesh positions every frame — so pulses
+     automatically keep following an edge even if you drag one of its
+     nodes elsewhere. ---------- */
+  const PULSE_COUNT = 16;
+  const dataPulses = [];
+  function pickPulseEdge(){ return nodeEdges[Math.floor(Math.random()*nodeEdges.length)]; }
+  for(let i=0;i<PULSE_COUNT;i++){
+    const mat = new THREE.SpriteMaterial({
+      map: glowTexHard, color:0xffe6ad, transparent:true,
+      opacity:0, blending: THREE.AdditiveBlending, depthWrite:false
+    });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(4.5,4.5,1);
+    core.add(sprite);
+    dataPulses.push({
+      sprite, edge: pickPulseEdge(), t: Math.random(),
+      speed: 0.12 + Math.random()*0.22,
+      targetOpacity: 0.55 + Math.random()*0.35
+    });
+  }
+
+  /* ============================================================
+     INTERACTION — drag to rotate, wheel to zoom, click to select
+
+     Every input (mouse, touch, gesture) only ever writes to a
+     handful of TARGET values (targetRotX/Y, targetZoom). The
+     render loop eases the actual sphere rotation and camera
+     distance toward those targets every frame. This means mouse
+     drag, scroll, and hand gestures all share one smoothing path —
+     motion always feels the same and small jitter (especially from
+     hand tracking) gets absorbed instead of showing up as stutter.
+  ============================================================ */
+  let isDragging = false;
+  let prev = { x:0, y:0 };
+  let moved = 0;
+  let autoRotate = true;
+  let draggingNodeIndex = -1;
+
+  let targetRotX = 0;
+  let targetRotY = 0;
+  let targetZoom = camera.position.z;
+  const ROT_DAMP  = 0.14;
+  const ZOOM_DAMP = 0.16;
+  const ZOOM_MIN = 180, ZOOM_MAX = 820;
+
+  function clientToNDC(x,y){ return [ (x/window.innerWidth)*2 - 1, -(y/window.innerHeight)*2 + 1 ]; }
+
+  function pointerDown(e){
+    isDragging = true;
+    moved = 0;
+    const p = e.touches ? e.touches[0] : e;
+    prev.x = p.clientX; prev.y = p.clientY;
+    stage.classList.add('dragging');
+
+    const [ndcX, ndcY] = clientToNDC(p.clientX, p.clientY);
+    const idx = raycastNodeAtNDC(ndcX, ndcY);
+    if(idx >= 0){
+      draggingNodeIndex = idx;
+      nodeMeshes[idx].scale.set(1.8,1.8,1.8);
+    } else {
+      draggingNodeIndex = -1;
+      autoRotate = false;
+    }
+  }
+  function pointerMove(e){
+    if(!isDragging) return;
+    const p = e.touches ? e.touches[0] : e;
+    const dx = p.clientX - prev.x;
+    const dy = p.clientY - prev.y;
+    moved += Math.abs(dx) + Math.abs(dy);
+    prev.x = p.clientX; prev.y = p.clientY;
+
+    if(draggingNodeIndex >= 0){
+      const [ndcX, ndcY] = clientToNDC(p.clientX, p.clientY);
+      const localPos = projectToNodeDragPlane(ndcX, ndcY, draggingNodeIndex);
+      if(localPos) setNodePosition(draggingNodeIndex, localPos);
+      return;
+    }
+    targetRotY += dx * 0.005;
+    targetRotX += dy * 0.005;
+    targetRotX = Math.max(-1.3, Math.min(1.3, targetRotX));
+  }
+  function pointerUp(e){
+    isDragging = false;
+    stage.classList.remove('dragging');
+    const p = e.changedTouches ? e.changedTouches[0] : e;
+
+    if(draggingNodeIndex >= 0){
+      const idx = draggingNodeIndex;
+      draggingNodeIndex = -1;
+      if(moved < 6){
+        selectNode(idx); // was a click, not a drag
+      } else {
+        nodeMeshes[idx].scale.set(selectedIndex === idx ? 2.4 : 1, selectedIndex === idx ? 2.4 : 1, selectedIndex === idx ? 2.4 : 1);
+        spawnPing(nodeMeshes[idx].position, 0xffe0a0);
+      }
+    } else if(moved < 6){
+      handleClick(p.clientX, p.clientY);
+    }
+    setTimeout(()=>{ if(!isDragging) autoRotate = true; }, 2600);
+  }
+
+  stage.addEventListener('mousedown', pointerDown);
+  window.addEventListener('mousemove', pointerMove);
+  window.addEventListener('mouseup', pointerUp);
+  stage.addEventListener('touchstart', pointerDown, {passive:true});
+  window.addEventListener('touchmove', pointerMove, {passive:true});
+  window.addEventListener('touchend', pointerUp);
+
+  stage.addEventListener('wheel', (e)=>{
+    e.preventDefault();
+    targetZoom += e.deltaY * 0.32;
+    targetZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, targetZoom));
+  }, { passive:false });
+
+  const raycaster = new THREE.Raycaster();
+  const mouseNDC = new THREE.Vector2();
+  const tooltip = document.getElementById('tooltip');
+  let selectedIndex = -1;
+
+  // shared helper: given normalized device coords, return hovered node index or -1
+  function raycastNodeAtNDC(ndcX, ndcY){
+    mouseNDC.x = ndcX; mouseNDC.y = ndcY;
+    raycaster.setFromCamera(mouseNDC, camera);
+    const hits = raycaster.intersectObjects(nodeMeshes);
+    return hits.length ? hits[0].object.userData.index : -1;
+  }
+
+  function handleClick(clientX, clientY){
+    const idx = raycastNodeAtNDC((clientX/window.innerWidth)*2 - 1, -(clientY/window.innerHeight)*2 + 1);
+    if(idx >= 0) selectNode(idx);
+  }
+
+  stage.addEventListener('mousemove', (e)=>{
+    if(isDragging){ tooltip.style.display='none'; return; }
+    const idx = raycastNodeAtNDC((e.clientX/window.innerWidth)*2 - 1, -(e.clientY/window.innerHeight)*2 + 1);
+    if(idx >= 0){
+      tooltip.style.display = 'block';
+      tooltip.style.left = (e.clientX+16)+'px';
+      tooltip.style.top = (e.clientY+16)+'px';
+      tooltip.textContent = NODE_DATA[idx].name;
+      stage.style.cursor = 'pointer';
+    } else {
+      tooltip.style.display='none';
+      stage.style.cursor = isDragging ? 'grabbing' : 'grab';
+    }
+  });
+
+  /* ============================================================
+     DETAIL PANEL
+  ============================================================ */
+  const panel = document.getElementById('panel');
+  const closeBtn = document.getElementById('closeBtn');
+
+  function selectNode(index){
+    if(selectedIndex >= 0) nodeMeshes[selectedIndex].scale.set(1,1,1);
+    selectedIndex = index;
+    nodeMeshes[index].scale.set(2.4,2.4,2.4);
+    spawnPing(nodeMeshes[index].position, 0xffe0a0);
+
+    const d = NODE_DATA[index];
+    document.getElementById('pId').textContent = '// ' + d.id;
+    document.getElementById('pName').textContent = d.name;
+    document.getElementById('pCategory').textContent = d.category;
+    document.getElementById('pDesc').textContent = d.desc;
+
+    const statusPill = document.getElementById('pStatus');
+    const statusText = document.getElementById('pStatusText');
+    if(d.status === 'warning'){
+      statusPill.className = 'status-pill warning';
+      statusText.textContent = 'ATTENTION REQUIRED';
+    } else {
+      statusPill.className = 'status-pill online';
+      statusText.textContent = 'ONLINE / NOMINAL';
+    }
+
+    setStat('sIntegrity','sIntegrityVal', d.integrity);
+    setStat('sThroughput','sThroughputVal', d.throughput);
+    setStat('sSignal','sSignalVal', d.signal);
+
+    const now = new Date();
+    document.getElementById('pLog').innerHTML =
+      `<span>[${fmtTime(now)}]</span> Node handshake confirmed<br>` +
+      `<span>[${fmtTime(new Date(now-42000))}]</span> Diagnostic sweep complete<br>` +
+      `<span>[${fmtTime(new Date(now-190000))}]</span> Telemetry sync established`;
+
+    panel.classList.add('open');
+  }
+
+  function setStat(barId, valId, value){
+    document.getElementById(barId).style.width = value + '%';
+    document.getElementById(valId).textContent = value + '%';
+  }
+
+  function fmtTime(d){ return d.toTimeString().slice(0,8); }
+
+  closeBtn.addEventListener('click', closePanel);
+  function closePanel(){
+    panel.classList.remove('open');
+    if(selectedIndex>=0) nodeMeshes[selectedIndex].scale.set(1,1,1);
+    selectedIndex = -1;
+  }
+
+  /* ============================================================
+     CLOCK + TELEMETRY
+  ============================================================ */
+  function tickClock(){
+    const now = new Date();
+    document.getElementById('clockTime').textContent = fmtTime(now);
+    document.getElementById('clockDate').textContent = now.toDateString().toUpperCase();
+  }
+  tickClock();
+  setInterval(tickClock, 1000);
+
+  let telemetry = { power:96, net:41, cpu:63 };
+  function jitter(v, min, max, amount){
+    return Math.max(min, Math.min(max, v + (Math.random()-0.5)*amount));
+  }
+  function tickTelemetry(){
+    telemetry.power = jitter(telemetry.power, 82, 99, 3);
+    telemetry.net   = jitter(telemetry.net, 15, 70, 8);
+    telemetry.cpu   = jitter(telemetry.cpu, 35, 85, 6);
+    document.getElementById('mPower').textContent = Math.round(telemetry.power)+'%';
+    document.getElementById('mNet').textContent   = Math.round(telemetry.net)+'%';
+    document.getElementById('mCpu').textContent   = Math.round(telemetry.cpu)+'%';
+    document.getElementById('mPowerFill').style.width = telemetry.power+'%';
+    document.getElementById('mNetFill').style.width   = telemetry.net+'%';
+    document.getElementById('mCpuFill').style.width   = telemetry.cpu+'%';
+  }
+  tickTelemetry();
+  setInterval(tickTelemetry, 1400);
+
+  /* ============================================================
+     HAND GESTURE CONTROL (webcam)
+
+     Every frame, the raw hand shape is classified into one of:
+       OPEN  - all four fingers extended            -> ROTATE
+       PINCH - middle/ring/pinky curled, thumb tip
+               close to index tip                    -> ZOOM
+       POINT - index + middle extended together
+               ("peace sign"), ring/pinky curled      -> AIM cursor
+       FIST  - everything curled including thumb      -> CLOSE panel
+
+     POINT was changed from a single extended index finger to a
+     two-finger "peace sign" specifically so it can never be
+     confused with PINCH: PINCH requires the middle finger curled
+     down (a claw), POINT requires it extended alongside the index.
+     The two shapes are mutually exclusive by construction, so
+     spreading your fingers for a full pinch-to-zoom motion never
+     gets misread as an aim/select gesture partway through.
+
+     DRAG & DROP: if you PINCH within ~550ms of having aimed at a
+     node (i.e. you point at it, then close into a pinch before
+     moving away), that specific node is "grabbed" instead of
+     triggering zoom — moving your hand then drags the node through
+     3D space, and releasing the pinch drops it in place. A pinch
+     that ISN'T preceded by aiming at a node behaves as pure zoom,
+     exactly as before.
+
+     Two things make this reliable and smooth where the previous
+     version wasn't:
+
+     1. PINCH is decided by a hand-scale-NORMALIZED thumb-index
+        distance (divided by wrist-to-knuckle span), not a raw
+        image-space threshold. That fixes the original bug: raw
+        distance grows the instant you spread your fingers, which
+        used to fall outside a fixed threshold and get
+        misclassified as a different gesture mid-zoom. The
+        normalized ratio is also checked BEFORE the "is index
+        extended" check, so both pinch styles work — a straight
+        index with the thumb reaching over, or a curled "OK sign"
+        pinch.
+     2. A short debounce (a shape must win 3 frames in a row before
+        it's committed) plus exponential smoothing on the
+        continuous signals (pinch ratio, palm position, cursor
+        position) removes hand-tracking jitter, so rotation/zoom/
+        aiming all feel damped and deliberate instead of twitchy.
+  ============================================================ */
+  const gpToggle   = document.getElementById('gestureToggle');
+  const gpStatus   = document.getElementById('gestureStatus');
+  const gpHandState= document.getElementById('gpHandState');
+  const gpNote     = document.getElementById('gestureNote');
+  const gCanvas    = document.getElementById('gestureCanvas');
+  const gCtx       = gCanvas.getContext('2d');
+  const handCursor = document.getElementById('handCursor');
+  const dwellArc   = handCursor.querySelector('.dwell-arc');
+
+  const HAND_CONNECTIONS = [
+    [0,1],[1,2],[2,3],[3,4],
+    [0,5],[5,6],[6,7],[7,8],
+    [5,9],[9,10],[10,11],[11,12],
+    [9,13],[13,14],[14,15],[15,16],
+    [13,17],[17,18],[18,19],[19,20],
+    [0,17]
+  ];
+
+  let videoEl = null;
+  let mediaStream = null;
+  let handsModel = null;
+  let gestureActive = false;
+  let lastHandSeenAt = 0;
+
+  // continuous-signal smoothing state
+  let smoothedPinchRatio = null;
+  let lastPinchRatio = null;
+  let smoothedPalm = null;
+  let lastPalm = null;
+  let smoothedCursor = null;
+
+  // shape debounce state
+  let candidateShape = null, candidateCount = 0;
+  let committedShape = 'NONE';
+
+  // dwell-to-select state (POINT gesture)
+  let dwellIndex = -1;
+  let dwellStart = 0;
+  let dwellLocked = false;
+  let fistHandled = false;
+  const DWELL_MS = 600;
+  const DWELL_ARC_LEN = 88; // matches stroke-dasharray in markup
+
+  // grab-and-drag state: PINCH while a node was JUST being aimed at
+  // (two-finger POINT) grabs that node instead of zooming — this lets
+  // you reach out, aim, pinch to pick a node up, move it, and release
+  // to drop it, all with one hand.
+  let grabbedNodeIndex = -1;
+  let lastAimedNodeIndex = -1;
+  let lastAimedAt = 0;
+  let smoothedGrabCursor = null;
+  const GRAB_AIM_GRACE_MS = 550; // how recently you must have aimed at a node for a pinch to grab it instead of zoom
+
+  const EXTEND_MARGIN   = 1.15; // tip must be this much farther from wrist than its pip joint
+  const PINCH_SPLIT     = 0.62; // thumb-index ratio below this = pinching
+  const DEBOUNCE_FRAMES = 3;
+  const EMA_PALM        = 0.5;
+  const EMA_PINCH       = 0.45;
+  const EMA_CURSOR      = 0.35;
+  const ZOOM_SENSITIVITY   = 460;
+  const ROTATE_SENSITIVITY = 3.0;
+
+  function dist2D(a,b){
+    const dx = a.x-b.x, dy = a.y-b.y;
+    return Math.sqrt(dx*dx + dy*dy);
+  }
+  function lerp(a,b,t){ return a + (b-a)*t; }
+
+  // classify raw hand shape this frame (orientation- and
+  // distance-from-camera independent — every measurement is a
+  // ratio against the hand's own scale, never an absolute pixel
+  // value, so it works whether the hand is near, far, or tilted)
+  function classifyHandRaw(lm){
+    const wrist = lm[0];
+    const handScale = dist2D(wrist, lm[5]) || 0.001; // wrist -> index MCP
+    const ext = (tipIdx, pipIdx) => dist2D(wrist, lm[tipIdx]) > dist2D(wrist, lm[pipIdx]) * EXTEND_MARGIN;
+    const thumbExt  = ext(4,2);
+    const indexExt  = ext(8,6);
+    const middleExt = ext(12,10);
+    const ringExt   = ext(16,14);
+    const pinkyExt  = ext(20,18);
+    const pinchRatio = dist2D(lm[4], lm[8]) / handScale;
+
+    // PINCH claw: middle/ring/pinky curled down — this is the ONLY
+    // shape that can produce 'PINCH', so spreading your pinch wide
+    // open can never be mistaken for POINT (which requires the
+    // middle finger extended) or OPEN (which requires all four).
+    // That keeps zoom uninterrupted across the whole pinch range.
+    const claw = !middleExt && !ringExt && !pinkyExt;
+
+    // POINT now needs index AND middle extended together (a
+    // "peace sign" aim) with ring/pinky curled — a shape that can
+    // never overlap with the claw used for pinch, so aiming at a
+    // node and pinch-zooming can't be confused for one another.
+    const twoFingerAim = indexExt && middleExt && !ringExt && !pinkyExt;
+
+    let shape;
+    if(claw && !thumbExt && !indexExt)        shape = 'FIST';
+    else if(claw && pinchRatio < PINCH_SPLIT)  shape = 'PINCH';
+    else if(twoFingerAim)                      shape = 'POINT';
+    else if(indexExt && middleExt && ringExt && pinkyExt) shape = 'OPEN';
+    else shape = 'UNKNOWN';
+
+    return { shape, pinchRatio };
+  }
+
+  // require a shape to win several consecutive frames before it's
+  // acted on, so momentary misreads don't flicker the mode
+  function debounce(rawShape){
+    if(rawShape === candidateShape){ candidateCount++; }
+    else { candidateShape = rawShape; candidateCount = 1; }
+    if(candidateCount >= DEBOUNCE_FRAMES) committedShape = rawShape;
+    return committedShape;
+  }
+
+  function drawHandOverlay(landmarks, shape){
+    gCtx.clearRect(0,0,gCanvas.width, gCanvas.height);
+    if(videoEl && videoEl.readyState >= 2){
+      gCtx.drawImage(videoEl, 0, 0, gCanvas.width, gCanvas.height);
+    }
+    gCtx.fillStyle = 'rgba(4,5,3,0.25)';
+    gCtx.fillRect(0,0,gCanvas.width, gCanvas.height);
+    if(!landmarks) return;
+
+    const toXY = (lm)=> [lm.x*gCanvas.width, lm.y*gCanvas.height];
+    gCtx.strokeStyle = 'rgba(255,170,0,0.8)';
+    gCtx.lineWidth = 1.5;
+    HAND_CONNECTIONS.forEach(([a,b])=>{
+      const [ax,ay] = toXY(landmarks[a]);
+      const [bx,by] = toXY(landmarks[b]);
+      gCtx.beginPath(); gCtx.moveTo(ax,ay); gCtx.lineTo(bx,by); gCtx.stroke();
+    });
+    landmarks.forEach((lm)=>{
+      const [x,y] = toXY(lm);
+      gCtx.beginPath(); gCtx.fillStyle = '#ffe0a0';
+      gCtx.arc(x,y,2,0,Math.PI*2); gCtx.fill();
+    });
+
+    if(shape === 'PINCH'){
+      const [tx,ty] = toXY(landmarks[4]);
+      const [ix,iy] = toXY(landmarks[8]);
+      gCtx.beginPath();
+      gCtx.strokeStyle = '#ff3b30'; gCtx.lineWidth = 2;
+      gCtx.moveTo(tx,ty); gCtx.lineTo(ix,iy); gCtx.stroke();
+    }
+    if(shape === 'POINT'){
+      const [ix,iy] = toXY(landmarks[8]);
+      const [mx,my] = toXY(landmarks[12]);
+      gCtx.beginPath();
+      gCtx.strokeStyle = '#fff2cf'; gCtx.lineWidth = 2;
+      gCtx.arc(ix,iy,5,0,Math.PI*2); gCtx.stroke();
+      gCtx.beginPath();
+      gCtx.arc(mx,my,5,0,Math.PI*2); gCtx.stroke();
+      gCtx.beginPath();
+      gCtx.strokeStyle = 'rgba(255,242,207,0.5)'; gCtx.lineWidth = 1;
+      gCtx.arc((ix+mx)/2,(iy+my)/2,9,0,Math.PI*2); gCtx.stroke();
+    }
+    if(shape === 'FIST'){
+      const [wx,wy] = toXY(landmarks[0]);
+      gCtx.beginPath();
+      gCtx.strokeStyle = '#ff3b30'; gCtx.lineWidth = 2;
+      gCtx.arc(wx,wy,10,0,Math.PI*2); gCtx.stroke();
+    }
+  }
+
+  function resetDwell(){
+    dwellIndex = -1; dwellStart = 0; dwellLocked = false;
+    handCursor.classList.remove('locked');
+    dwellArc.style.strokeDashoffset = DWELL_ARC_LEN;
+  }
+
+  function beginGrab(idx){
+    grabbedNodeIndex = idx;
+    smoothedGrabCursor = null;
+    nodeMeshes[idx].scale.set(1.8,1.8,1.8);
+    dwellArc.style.strokeDashoffset = DWELL_ARC_LEN;
+  }
+  function endGrab(){
+    if(grabbedNodeIndex >= 0){
+      const idx = grabbedNodeIndex;
+      const s = (selectedIndex === idx) ? 2.4 : 1;
+      nodeMeshes[idx].scale.set(s,s,s);
+      spawnPing(nodeMeshes[idx].position, 0xffe0a0);
+    }
+    grabbedNodeIndex = -1;
+    smoothedGrabCursor = null;
+    handCursor.classList.remove('locked');
+  }
+
+  function onHandResults(results){
+    const hasHand = results.multiHandLandmarks && results.multiHandLandmarks.length > 0;
+
+    if(!hasHand){
+      drawHandOverlay(null, null);
+      gpHandState.textContent = 'NO HAND';
+      gpStatus.textContent = 'STANDBY — SHOW HAND TO SENSOR';
+      smoothedPinchRatio = null; lastPinchRatio = null;
+      smoothedPalm = null; lastPalm = null;
+      smoothedCursor = null;
+      candidateShape = null; candidateCount = 0; committedShape = 'NONE';
+      fistHandled = false;
+      if(grabbedNodeIndex >= 0){ endGrab(); }
+      lastAimedNodeIndex = -1;
+      resetDwell();
+      handCursor.style.display = 'none';
+      tooltip.style.display = 'none';
+      return;
+    }
+
+    lastHandSeenAt = performance.now();
+    autoRotate = false;
+
+    const lm = results.multiHandLandmarks[0];
+    const raw = classifyHandRaw(lm);
+    const shape = debounce(raw.shape);
+    drawHandOverlay(lm, shape);
+    gpHandState.textContent = 'TRACKING';
+
+    // smooth the pinch ratio continuously (even briefly outside PINCH
+    // mode) so the very first pinch frame doesn't jump
+    smoothedPinchRatio = smoothedPinchRatio === null ? raw.pinchRatio : lerp(smoothedPinchRatio, raw.pinchRatio, EMA_PINCH);
+
+    if(shape !== 'PINCH' && grabbedNodeIndex === -1) lastPinchRatio = null;
+    if(shape !== 'OPEN')  { lastPalm = null; smoothedPalm = null; }
+    if(shape !== 'POINT'){
+      if(dwellIndex >= 0){ lastAimedNodeIndex = dwellIndex; lastAimedAt = performance.now(); }
+      handCursor.style.display = 'none'; tooltip.style.display = 'none'; resetDwell(); smoothedCursor = null;
+    }
+    if(shape !== 'FIST') fistHandled = false;
+    if(shape !== 'PINCH' && grabbedNodeIndex >= 0){ endGrab(); }
+
+    if(shape === 'PINCH'){
+      const recentlyAimed = lastAimedNodeIndex >= 0 && (performance.now() - lastAimedAt < GRAB_AIM_GRACE_MS);
+
+      if(grabbedNodeIndex >= 0 || recentlyAimed){
+        if(grabbedNodeIndex === -1) beginGrab(lastAimedNodeIndex);
+
+        const tipA = lm[8], tipB = lm[12];
+        const rawX = (1 - (tipA.x+tipB.x)/2) * window.innerWidth;
+        const rawY = ((tipA.y+tipB.y)/2) * window.innerHeight;
+        smoothedGrabCursor = smoothedGrabCursor === null ? {x:rawX,y:rawY} : {
+          x: lerp(smoothedGrabCursor.x, rawX, EMA_CURSOR),
+          y: lerp(smoothedGrabCursor.y, rawY, EMA_CURSOR)
+        };
+        handCursor.style.display = 'block';
+        handCursor.classList.add('locked');
+        handCursor.style.left = smoothedGrabCursor.x + 'px';
+        handCursor.style.top  = smoothedGrabCursor.y + 'px';
+
+        const ndcX = (smoothedGrabCursor.x/window.innerWidth)*2 - 1;
+        const ndcY = -(smoothedGrabCursor.y/window.innerHeight)*2 + 1;
+        const localPos = projectToNodeDragPlane(ndcX, ndcY, grabbedNodeIndex);
+        if(localPos) setNodePosition(grabbedNodeIndex, localPos);
+
+        tooltip.style.display = 'block';
+        tooltip.style.left = (smoothedGrabCursor.x+20)+'px';
+        tooltip.style.top = (smoothedGrabCursor.y+20)+'px';
+        tooltip.textContent = 'MOVING: ' + NODE_DATA[grabbedNodeIndex].name;
+        gpStatus.textContent = 'GRABBING ' + NODE_DATA[grabbedNodeIndex].name + ' — MOVE TO REPOSITION';
+        lastPinchRatio = null; // don't let a grab's pinch distance leak into zoom once released
+
+      } else {
+        gpStatus.textContent = 'PINCH CLAW → ZOOM';
+        if(lastPinchRatio !== null){
+          const delta = smoothedPinchRatio - lastPinchRatio; // spreading apart => positive => zoom IN
+          targetZoom -= delta * ZOOM_SENSITIVITY;
+          targetZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, targetZoom));
+        }
+        lastPinchRatio = smoothedPinchRatio;
+      }
+
+    } else if(shape === 'OPEN'){
+      gpStatus.textContent = 'OPEN PALM → ROTATE';
+      const palm = lm[9]; // middle-finger MCP: stable palm-center reference
+      smoothedPalm = smoothedPalm === null ? {x:palm.x,y:palm.y} : {
+        x: lerp(smoothedPalm.x, palm.x, EMA_PALM),
+        y: lerp(smoothedPalm.y, palm.y, EMA_PALM)
+      };
+      if(lastPalm){
+        const dx = -(smoothedPalm.x - lastPalm.x); // mirrored view: flip X to feel natural
+        const dy = (smoothedPalm.y - lastPalm.y);
+        targetRotY += dx * ROTATE_SENSITIVITY;
+        targetRotX += dy * ROTATE_SENSITIVITY;
+        targetRotX = Math.max(-1.3, Math.min(1.3, targetRotX));
+      }
+      lastPalm = { x: smoothedPalm.x, y: smoothedPalm.y };
+
+    } else if(shape === 'POINT'){
+      const tipA = lm[8], tipB = lm[12]; // index + middle fingertip midpoint aims the cursor
+      const rawX = (1 - (tipA.x+tipB.x)/2) * window.innerWidth;  // mirrored view: flip X
+      const rawY = ((tipA.y+tipB.y)/2) * window.innerHeight;
+      smoothedCursor = smoothedCursor === null ? {x:rawX,y:rawY} : {
+        x: lerp(smoothedCursor.x, rawX, EMA_CURSOR),
+        y: lerp(smoothedCursor.y, rawY, EMA_CURSOR)
+      };
+      const screenX = smoothedCursor.x, screenY = smoothedCursor.y;
+
+      handCursor.style.display = 'block';
+      handCursor.style.left = screenX + 'px';
+      handCursor.style.top = screenY + 'px';
+
+      const ndcX = (screenX/window.innerWidth)*2 - 1;
+      const ndcY = -(screenY/window.innerHeight)*2 + 1;
+      const idx = raycastNodeAtNDC(ndcX, ndcY);
+
+      if(idx >= 0){
+        tooltip.style.display = 'block';
+        tooltip.style.left = (screenX+20)+'px';
+        tooltip.style.top = (screenY+20)+'px';
+        tooltip.textContent = NODE_DATA[idx].name;
+
+        if(idx !== dwellIndex){
+          dwellIndex = idx; dwellStart = performance.now(); dwellLocked = false;
+          handCursor.classList.remove('locked');
+        }
+        const elapsed = performance.now() - dwellStart;
+        const progress = Math.min(1, elapsed / DWELL_MS);
+        dwellArc.style.strokeDashoffset = DWELL_ARC_LEN * (1 - progress);
+        gpStatus.textContent = 'AIMING AT ' + NODE_DATA[idx].name;
+
+        if(progress >= 1 && !dwellLocked){
+          dwellLocked = true;
+          handCursor.classList.add('locked');
+          selectNode(idx);
+        }
+      } else {
+        tooltip.style.display = 'none';
+        resetDwell();
+        gpStatus.textContent = 'POINTING → AIM TWO FINGERS AT A NODE';
+      }
+
+    } else if(shape === 'FIST'){
+      gpStatus.textContent = 'FIST → CLOSE PANEL';
+      if(!fistHandled){
+        fistHandled = true;
+        closePanel();
+      }
+    } else {
+      gpStatus.textContent = 'OPEN PALM · PINCH · TWO-FINGER AIM · FIST';
+    }
+  }
+
+  async function gestureLoop(){
+    if(!gestureActive) return;
+    if(videoEl && videoEl.readyState >= 2){
+      await handsModel.send({ image: videoEl });
+    }
+    requestAnimationFrame(gestureLoop);
+  }
+
+  async function enableGestureControl(){
+    gpNote.classList.remove('show');
+    gpStatus.textContent = 'REQUESTING CAMERA ACCESS…';
+    try{
+      mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { width:480, height:360, facingMode:'user' }, audio:false
+      });
+    } catch(err){
+      gpStatus.textContent = 'CAMERA ACCESS DENIED';
+      gpNote.classList.add('show');
+      return;
+    }
+
+    videoEl = document.createElement('video');
+    videoEl.srcObject = mediaStream;
+    videoEl.muted = true;
+    videoEl.playsInline = true;
+    await videoEl.play();
+
+    if(typeof Hands === 'undefined'){
+      gpStatus.textContent = 'TRACKING LIBRARY UNAVAILABLE';
+      gpNote.classList.add('show');
+      mediaStream.getTracks().forEach(t=>t.stop());
+      return;
+    }
+
+    handsModel = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+    handsModel.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.65,
+      minTrackingConfidence: 0.65
+    });
+    handsModel.onResults(onHandResults);
+
+    gestureActive = true;
+    gpToggle.textContent = 'DISABLE GESTURE CONTROL';
+    gpToggle.classList.add('active');
+    gpHandState.textContent = 'ARMED';
+    gpStatus.textContent = 'STANDBY — SHOW HAND TO SENSOR';
+    gestureLoop();
+  }
+
+  function disableGestureControl(){
+    gestureActive = false;
+    if(mediaStream){ mediaStream.getTracks().forEach(t=>t.stop()); mediaStream = null; }
+    videoEl = null;
+    gCtx.clearRect(0,0,gCanvas.width, gCanvas.height);
+    gpToggle.textContent = 'ENABLE GESTURE CONTROL';
+    gpToggle.classList.remove('active');
+    gpHandState.textContent = 'OFFLINE';
+    gpStatus.textContent = 'STANDBY';
+    smoothedPinchRatio = null; lastPinchRatio = null;
+    smoothedPalm = null; lastPalm = null;
+    smoothedCursor = null;
+    if(grabbedNodeIndex >= 0) endGrab();
+    lastAimedNodeIndex = -1;
+    resetDwell();
+    handCursor.style.display = 'none';
+    tooltip.style.display = 'none';
+  }
+
+  gpToggle.addEventListener('click', ()=>{
+    if(gestureActive) disableGestureControl();
+    else enableGestureControl();
+  });
+
+  /* ============================================================
+     RENDER LOOP
+  ============================================================ */
+  /* ============================================================
+     RENDER LOOP
+
+     Beyond the existing rotate/zoom damping, this now also drives:
+       - a one-time "power-up" intro: nodes materialize with a staggered
+         pop-in, wire rings unfurl, the core ramps up from dark
+       - traveling data-pulse particles riding the node network
+       - expanding "ping" ripples on select/drop
+       - a very subtle camera drift for a less static, more alive feel
+  ============================================================ */
+  const introStart = performance.now();
+  const INTRO_MS = 1500;
+  function easeOutCubic(x){ return 1 - Math.pow(1-x, 3); }
+  function easeOutBack(x){ const c1=1.70158, c3=c1+1; return 1 + c3*Math.pow(x-1,3) + c1*Math.pow(x-1,2); }
+
+  let introActive = true;
+  let lastFrameTime = performance.now();
+
+  function animate(){
+    requestAnimationFrame(animate);
+
+    const now = performance.now();
+    const dt = Math.min(0.05, (now - lastFrameTime) / 1000); // seconds, clamped
+    lastFrameTime = now;
+    const t = now * 0.001;
+    const elapsed = now - introStart;
+
+    /* ---------- boot / assembly intro ---------- */
+    if(introActive){
+      const globalT = Math.max(0, Math.min(1, elapsed / (INTRO_MS + 500)));
+      const globalEase = easeOutCubic(globalT);
+
+      coreSprite.scale.setScalar(0.5 + (46-0.5)*globalEase);
+      coreDot.scale.setScalar(0.1 + 0.9*globalEase);
+
+      introFadeMaterials.forEach(f => { f.material.opacity = f.targetOpacity * globalEase; });
+
+      wireRings.forEach(r => {
+        const rT = Math.max(0, Math.min(1, (elapsed - r.delay*1000) / 650));
+        const e = easeOutCubic(rT);
+        r.mesh.material.opacity = r.targetOpacity * e;
+        r.mesh.scale.setScalar(0.15 + 0.85*e);
+      });
+
+      accentRings.forEach(r => {
+        const e = easeOutCubic(Math.max(0, Math.min(1, elapsed/1200)));
+        r.mesh.material.opacity = r.targetOpacity * e;
+        r.mesh.scale.setScalar(0.15 + 0.85*e);
+      });
+
+      nodeMeshes.forEach((mesh, i) => {
+        const nT = Math.max(0, Math.min(1, (elapsed - nodeIntroDelay[i]) / 650));
+        const e = Math.max(0, easeOutBack(nT));
+        mesh.scale.setScalar(e);
+        nodeGlows[i].material.opacity = Math.min(0.9, 0.9*easeOutCubic(nT));
+      });
+
+      dataPulses.forEach(p => {
+        const e = easeOutCubic(Math.max(0, Math.min(1, (elapsed-900)/700)));
+        p.sprite.material.opacity = p.targetOpacity * e;
+      });
+
+      if(elapsed > INTRO_MS + 700){
+        introActive = false;
+        // snap everything to its final resting state exactly once
+        coreSprite.scale.setScalar(46); coreDot.scale.setScalar(1);
+        introFadeMaterials.forEach(f => f.material.opacity = f.targetOpacity);
+        wireRings.forEach(r => { r.mesh.material.opacity = r.targetOpacity; r.mesh.scale.setScalar(1); });
+        accentRings.forEach(r => { r.mesh.material.opacity = r.targetOpacity; r.mesh.scale.setScalar(1); });
+        nodeMeshes.forEach(mesh => mesh.scale.setScalar(1));
+        nodeGlows.forEach(s => s.material.opacity = 0.9);
+      }
+    }
+
+    /* ---------- rotation / zoom easing (mouse, scroll, gestures) ---------- */
+    if(gestureActive && !autoRotate && performance.now() - lastHandSeenAt > 2500){
+      autoRotate = true;
+    }
+    if(autoRotate && !isDragging){
+      targetRotY += 0.0015;
+    }
+    core.rotation.y += (targetRotY - core.rotation.y) * ROT_DAMP;
+    core.rotation.x += (targetRotX - core.rotation.x) * ROT_DAMP;
+    camera.position.z += (targetZoom - camera.position.z) * ZOOM_DAMP;
+
+    /* ---------- subtle cinematic camera drift ---------- */
+    camera.position.x = Math.sin(t*0.18) * 4;
+    camera.position.y = Math.cos(t*0.22) * 3;
+    camera.lookAt(0,0,0);
+
+    /* ---------- node glow pulse + core light flicker ---------- */
+    nodeGlows.forEach((s, i)=>{
+      const pulse = 1 + Math.sin(t*1.4 + i)*0.1;
+      s.scale.set(13*pulse, 13*pulse, 1);
+    });
+    coreLight.intensity = (3.0 + Math.sin(t*1.3)*0.5) * (introActive ? Math.max(0, Math.min(1, elapsed/1200)) : 1);
+
+    /* ---------- accent ring counter-rotation ---------- */
+    accentRings.forEach(r => { r.mesh.rotation.z += r.speed; });
+
+    /* ---------- traveling data pulses ---------- */
+    if(!introActive){
+      dataPulses.forEach(p=>{
+        p.t += p.speed * dt;
+        if(p.t >= 1){ p.t = 0; p.edge = pickPulseEdge(); p.speed = 0.12 + Math.random()*0.22; }
+        const a = nodeMeshes[p.edge.a].position, b = nodeMeshes[p.edge.b].position;
+        p.sprite.position.set(
+          a.x + (b.x-a.x)*p.t,
+          a.y + (b.y-a.y)*p.t,
+          a.z + (b.z-a.z)*p.t
+        );
+      });
+    }
+
+    /* ---------- ping ripple cleanup ---------- */
+    for(let i=pings.length-1; i>=0; i--){
+      const p = pings[i];
+      const age = (now - p.start) / 700; // 0..1 over 700ms
+      if(age >= 1){ core.remove(p.sprite); p.sprite.material.dispose(); pings.splice(i,1); continue; }
+      const e = easeOutCubic(age);
+      p.sprite.scale.setScalar(6 + e*34);
+      p.sprite.material.opacity = 0.9 * (1-age);
+    }
+
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  window.addEventListener('resize', ()=>{
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+})();
+</script>
+</body>
+</html>

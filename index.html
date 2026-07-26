@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>J.A.R.V.I.S. // BIOMETRIC ACCESS</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Share+Tech+Mono&display=swap');
+
+  :root{
+    --amber:        #ffaa00;
+    --amber-bright: #ffe0a0;
+    --amber-hot:    #fff2cf;
+    --amber-dim:    #6b4400;
+    --amber-glass:  rgba(255,170,0,0.08);
+    --panel-bg:     rgba(7,8,5,0.82);
+    --red:          #ff3b30;
+    --green:        #35ff8a;
+    --text-dim:     #8a6a2a;
+  }
+
+  *{ box-sizing:border-box; margin:0; padding:0; }
+
+  html,body{
+    width:100%; height:100%; overflow:hidden;
+    background: radial-gradient(ellipse at 50% 45%, #0b0906 0%, #050403 45%, #000000 100%);
+    font-family:'Share Tech Mono', monospace;
+    color: var(--amber);
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* ---------- ambient moving grid backdrop (pure CSS, cheap) ---------- */
+  #grid{
+    position:fixed; inset:-2px; z-index:0; pointer-events:none;
+    background-image:
+      linear-gradient(rgba(255,170,0,0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,170,0,0.05) 1px, transparent 1px);
+    background-size: 46px 46px;
+    animation: gridDrift 22s linear infinite;
+    opacity:0.5;
+  }
+  @keyframes gridDrift{ from{ background-position:0 0, 0 0; } to{ background-position:0 460px, 460px 0; } }
+  #vignette{
+    position:fixed; inset:0; z-index:1; pointer-events:none;
+    background: radial-gradient(ellipse at center, transparent 40%, #000 100%);
+  }
+
+  .bracket{ position:fixed; width:46px; height:46px; border:1.5px solid var(--amber); opacity:0.45; z-index:5; }
+  .bracket.tl{ top:18px; left:18px; border-right:none; border-bottom:none; }
+  .bracket.tr{ top:18px; right:18px; border-left:none; border-bottom:none; }
+  .bracket.bl{ bottom:18px; left:18px; border-right:none; border-top:none; }
+  .bracket.br{ bottom:18px; right:18px; border-left:none; border-top:none; }
+
+  #header{
+    position:fixed; top:0; left:0; right:0; z-index:5;
+    text-align:center; padding:26px 20px 0 20px;
+    letter-spacing:6px;
+  }
+  #header h1{
+    font-family:'Orbitron', sans-serif; font-weight:900; font-size:22px;
+    color:var(--amber-bright); text-shadow:0 0 14px rgba(255,180,60,0.6);
+  }
+  #header p{ margin-top:6px; font-size:10px; letter-spacing:3px; color:var(--text-dim); }
+
+  /* ---------- main stage ---------- */
+  #stage{
+    position:relative; z-index:2;
+    width:100%; height:100%;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:22px;
+  }
+
+  #scanFrame{
+    position:relative; width:380px; height:380px;
+    border:1px solid var(--amber-dim);
+    background:#050402;
+    overflow:hidden;
+  }
+  #scanFrame::before, #scanFrame::after{
+    content:''; position:absolute; width:26px; height:26px; border:2px solid var(--amber);
+    opacity:0.8;
+  }
+  #scanFrame::before{ top:-1px; left:-1px; border-right:none; border-bottom:none; }
+  #scanFrame::after{ bottom:-1px; right:-1px; border-left:none; border-top:none; }
+  #scanCornerTR, #scanCornerBL{
+    position:absolute; width:26px; height:26px; border:2px solid var(--amber); opacity:0.8; z-index:4;
+  }
+  #scanCornerTR{ top:-1px; right:-1px; border-left:none; border-bottom:none; }
+  #scanCornerBL{ bottom:-1px; left:-1px; border-right:none; border-top:none; }
+
+  #video{
+    position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+    transform:scaleX(-1); opacity:0; transition:opacity 0.6s ease;
+  }
+  #video.live{ opacity:1; }
+  #overlay{ position:absolute; inset:0; width:100%; height:100%; z-index:3; }
+
+  #scanSweep{
+    position:absolute; left:0; right:0; height:2px; top:0;
+    background:linear-gradient(90deg, transparent, var(--amber-bright), transparent);
+    box-shadow:0 0 12px var(--amber);
+    z-index:3; opacity:0; pointer-events:none;
+  }
+  #scanSweep.active{ opacity:1; animation: sweep 2.2s ease-in-out infinite; }
+  @keyframes sweep{ 0%{ top:4%; } 50%{ top:94%; } 100%{ top:4%; } }
+
+  #idleCrosshair{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    z-index:2; pointer-events:none;
+  }
+  #idleCrosshair svg{ width:120px; height:120px; opacity:0.35; }
+  #idleCrosshair.pulse svg{ animation: idlePulse 2.4s ease-in-out infinite; }
+  @keyframes idlePulse{ 0%,100%{ opacity:0.2; transform:scale(1); } 50%{ opacity:0.5; transform:scale(1.06); } }
+
+  #statusBlock{ text-align:center; max-width:460px; }
+  #statusTitle{
+    font-family:'Orbitron', sans-serif; font-size:17px; font-weight:700; letter-spacing:3px;
+    color:var(--amber-bright); text-shadow:0 0 10px rgba(255,180,60,0.4);
+    min-height:24px;
+  }
+  #statusSub{ margin-top:8px; font-size:11px; letter-spacing:1.5px; color:var(--text-dim); min-height:16px; }
+
+  #bootBar{ width:340px; height:3px; background:rgba(255,170,0,0.12); margin-top:4px; }
+  #bootBarFill{ height:100%; width:0%; background:linear-gradient(90deg,var(--amber-dim),var(--amber)); box-shadow:0 0 8px var(--amber); transition:width 0.35s ease; }
+
+  /* ---------- name / enrollment panel ---------- */
+  #enrollPanel{
+    display:none; flex-direction:column; align-items:center; gap:12px;
+    width:340px;
+  }
+  #enrollPanel input{
+    width:100%; background:rgba(7,8,5,0.7); border:1px solid var(--amber-dim);
+    color:var(--amber-bright); font-family:'Share Tech Mono', monospace; font-size:13px;
+    letter-spacing:2px; padding:10px 12px; text-align:center; text-transform:uppercase;
+  }
+  #enrollPanel input:focus{ outline:none; border-color:var(--amber); }
+  .btn{
+    background:none; border:1px solid var(--amber-dim); color:var(--amber);
+    font-family:'Share Tech Mono', monospace; font-size:11px; letter-spacing:2px;
+    padding:10px 22px; cursor:pointer; width:100%;
+  }
+  .btn:hover{ background:var(--amber-glass); border-color:var(--amber); color:var(--amber-bright); }
+  .btn-row{ display:flex; gap:10px; width:100%; }
+  .btn-row .btn{ width:auto; flex:1; }
+
+  #dwellDots{ display:flex; gap:8px; }
+  #dwellDots span{ width:9px; height:9px; border:1px solid var(--amber-dim); border-radius:50%; }
+  #dwellDots span.filled{ background:var(--amber); border-color:var(--amber); box-shadow:0 0 6px var(--amber); }
+
+  /* ---------- log panel ---------- */
+  #logPanel{
+    position:fixed; left:24px; bottom:24px; width:300px; max-height:190px;
+    border:1px solid var(--amber-dim); background:rgba(7,8,5,0.75);
+    padding:10px 12px; font-size:9.5px; letter-spacing:0.5px; line-height:1.7;
+    color:var(--text-dim); overflow:hidden; z-index:5;
+  }
+  #logPanel .lp-head{ font-size:9px; letter-spacing:2px; color:var(--text-dim); margin-bottom:6px; opacity:0.8; }
+  #logLines span.ok{ color:var(--amber-bright); }
+  #logLines span.warn{ color:var(--red); }
+
+  /* ---------- guest / footer controls ---------- */
+  #footerControls{
+    position:fixed; right:24px; bottom:24px; z-index:5;
+    display:flex; flex-direction:column; align-items:flex-end; gap:8px;
+  }
+  #guestLink{
+    font-size:10px; letter-spacing:2px; color:var(--text-dim);
+    background:none; border:none; cursor:pointer; text-decoration:underline;
+    text-underline-offset:3px;
+  }
+  #guestLink:hover{ color:var(--amber-bright); }
+  #resetLink{
+    font-size:9px; letter-spacing:1.5px; color:rgba(138,106,42,0.5);
+    background:none; border:none; cursor:pointer;
+  }
+  #resetLink:hover{ color:var(--red); }
+
+  /* ---------- access granted flash / transition ---------- */
+  #grantFlash{
+    position:fixed; inset:0; z-index:50; pointer-events:none;
+    display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(circle, rgba(255,224,160,0) 0%, rgba(0,0,0,0) 100%);
+    opacity:0;
+  }
+  #grantFlash.show{
+    animation: grantIn 1.7s ease forwards;
+  }
+  #grantFlash .g-text{
+    font-family:'Orbitron', sans-serif; font-weight:900; font-size:26px; letter-spacing:4px;
+    color:#fff8ea; text-shadow:0 0 30px rgba(255,200,110,0.9); text-align:center; opacity:0;
+  }
+  @keyframes grantIn{
+    0%{ opacity:0; background: radial-gradient(circle, rgba(255,224,160,0) 0%, rgba(0,0,0,0) 100%); }
+    12%{ opacity:1; background: radial-gradient(circle, rgba(255,224,160,0.15) 0%, rgba(0,0,0,0) 70%); }
+    50%{ opacity:1; }
+    85%{ opacity:1; background: radial-gradient(circle, rgba(255,230,180,0.95) 0%, rgba(20,15,5,0.98) 100%); }
+    100%{ opacity:1; background:#000; }
+  }
+  #grantFlash.show .g-text{ animation: textIn 1.7s ease forwards; }
+  @keyframes textIn{
+    0%,40%{ opacity:0; letter-spacing:10px; }
+    60%{ opacity:1; letter-spacing:4px; }
+    85%{ opacity:1; }
+    100%{ opacity:0; }
+  }
+
+  #noteBox{
+    display:none; max-width:340px; font-size:9.5px; letter-spacing:0.5px;
+    color:var(--text-dim); line-height:1.6; text-align:center; margin-top:4px;
+  }
+  #noteBox.show{ display:block; }
+
+  @media (max-width: 520px){
+    #scanFrame{ width:88vw; height:88vw; max-width:380px; max-height:380px; }
+    #logPanel{ display:none; }
+    #enrollPanel, #statusBlock{ width:88vw; max-width:340px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="grid"></div>
+<div id="vignette"></div>
+<div class="bracket tl"></div>
+<div class="bracket tr"></div>
+<div class="bracket bl"></div>
+<div class="bracket br"></div>
+
+<div id="header">
+  <h1>J.A.R.V.I.S.</h1>
+  <p>BIOMETRIC ACCESS CONTROL</p>
+</div>
+
+<div id="stage">
+
+  <div id="scanFrame">
+    <video id="video" autoplay muted playsinline></video>
+    <canvas id="overlay"></canvas>
+    <div id="scanCornerTR"></div>
+    <div id="scanCornerBL"></div>
+    <div id="scanSweep"></div>
+    <div id="idleCrosshair" class="pulse">
+      <svg viewBox="0 0 120 120">
+        <circle cx="60" cy="60" r="46" fill="none" stroke="#ffaa00" stroke-width="1"/>
+        <line x1="60" y1="4" x2="60" y2="24" stroke="#ffaa00" stroke-width="1.5"/>
+        <line x1="60" y1="96" x2="60" y2="116" stroke="#ffaa00" stroke-width="1.5"/>
+        <line x1="4" y1="60" x2="24" y2="60" stroke="#ffaa00" stroke-width="1.5"/>
+        <line x1="96" y1="60" x2="116" y2="60" stroke="#ffaa00" stroke-width="1.5"/>
+      </svg>
+    </div>
+  </div>
+
+  <div id="statusBlock">
+    <div id="statusTitle">INITIALIZING</div>
+    <div id="statusSub">Preparing biometric subsystem…</div>
+    <div id="bootBar"><div id="bootBarFill"></div></div>
+    <div id="noteBox"></div>
+  </div>
+
+  <div id="enrollPanel">
+    <input id="nameInput" type="text" maxlength="24" placeholder="ENTER DESIGNATION" value="OPERATOR"/>
+    <button class="btn" id="beginEnrollBtn">BEGIN ENROLLMENT SCAN</button>
+    <div id="dwellDots">
+      <span></span><span></span><span></span><span></span><span></span>
+    </div>
+  </div>
+
+  <div id="deniedPanel" style="display:none;" class="btn-row">
+    <button class="btn" id="retryBtn">TRY AGAIN</button>
+    <button class="btn" id="registerNewBtn">REGISTER AS NEW OPERATOR</button>
+  </div>
+
+</div>
+
+<div id="logPanel">
+  <div class="lp-head">SYSTEM DIAGNOSTIC LOG</div>
+  <div id="logLines"></div>
+</div>
+
+<div id="footerControls">
+  <button id="guestLink">ENTER AS GUEST →</button>
+  <button id="resetLink">RESET ALL PROFILES</button>
+</div>
+
+<div id="grantFlash"><div class="g-text" id="grantText">ACCESS GRANTED</div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js" crossorigin="anonymous"></script>
+<script>
+(function(){
+
+  const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js/weights';
+  const MATCH_THRESHOLD = 0.55;      // lower = stricter identity match
+  const MATCH_CONFIRM_FRAMES = 2;    // consecutive matching reads required to grant access
+  const NO_MATCH_GRACE_MS = 3200;    // how long a stranger's face must persist before "denied"
+  const ENROLL_SAMPLES = 5;
+  const DETECT_INTERVAL_MS = 380;
+  const PROFILES_KEY = 'jarvis_profiles';
+  const ACTIVE_USER_KEY = 'jarvis_active_user';
+
+  const els = {
+    video: document.getElementById('video'),
+    overlay: document.getElementById('overlay'),
+    sweep: document.getElementById('scanSweep'),
+    idle: document.getElementById('idleCrosshair'),
+    title: document.getElementById('statusTitle'),
+    sub: document.getElementById('statusSub'),
+    bootBar: document.getElementById('bootBar'),
+    bootBarFill: document.getElementById('bootBarFill'),
+    note: document.getElementById('noteBox'),
+    enrollPanel: document.getElementById('enrollPanel'),
+    nameInput: document.getElementById('nameInput'),
+    beginEnrollBtn: document.getElementById('beginEnrollBtn'),
+    dwellDots: document.querySelectorAll('#dwellDots span'),
+    deniedPanel: document.getElementById('deniedPanel'),
+    retryBtn: document.getElementById('retryBtn'),
+    registerNewBtn: document.getElementById('registerNewBtn'),
+    guestLink: document.getElementById('guestLink'),
+    resetLink: document.getElementById('resetLink'),
+    logLines: document.getElementById('logLines'),
+    grantFlash: document.getElementById('grantFlash'),
+    grantText: document.getElementById('grantText'),
+  };
+  const ctx = els.overlay.getContext('2d');
+
+  /* ============================================================
+     small helpers
+  ============================================================ */
+  function log(msg, cls){
+    const line = document.createElement('div');
+    line.innerHTML = `<span class="${cls||''}">[${new Date().toTimeString().slice(0,8)}] ${msg}</span>`;
+    els.logLines.appendChild(line);
+    while(els.logLines.children.length > 8){ els.logLines.removeChild(els.logLines.firstChild); }
+  }
+  function setStatus(title, sub){
+    els.title.textContent = title;
+    els.sub.textContent = sub || '';
+  }
+  function wait(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+  function loadProfiles(){
+    try{ return JSON.parse(localStorage.getItem(PROFILES_KEY) || '[]'); }
+    catch(e){ return []; }
+  }
+  function saveProfiles(list){
+    try{ localStorage.setItem(PROFILES_KEY, JSON.stringify(list)); return true; }
+    catch(e){ return false; }
+  }
+  function euclideanDistance(a,b){
+    let sum = 0;
+    for(let i=0;i<a.length;i++){ const d = a[i]-b[i]; sum += d*d; }
+    return Math.sqrt(sum);
+  }
+  function bestMatch(descriptor, profiles){
+    let best = null, bestDist = Infinity;
+    profiles.forEach(p=>{
+      const d = euclideanDistance(descriptor, p.descriptor);
+      if(d < bestDist){ bestDist = d; best = p; }
+    });
+    return { profile: best, distance: bestDist };
+  }
+
+  function goToDashboard(name){
+    if(name){
+      try{ localStorage.setItem(ACTIVE_USER_KEY, name); }catch(e){}
+    } else {
+      try{ localStorage.removeItem(ACTIVE_USER_KEY); }catch(e){}
+    }
+    const url = 'dashboard.html' + (name ? ('?user=' + encodeURIComponent(name)) : '');
+    setTimeout(()=>{ window.location.href = url; }, 1650);
+  }
+
+  function grantAccess(name){
+    stopDetectionLoop();
+    els.grantText.textContent = name ? `ACCESS GRANTED — WELCOME, ${name.toUpperCase()}` : 'ACCESS GRANTED';
+    els.grantFlash.classList.add('show');
+    setStatus('ACCESS GRANTED', name ? `Welcome back, ${name}.` : 'Welcome.');
+    log(`Identity confirmed${name ? ' — ' + name : ''}`, 'ok');
+    goToDashboard(name);
+  }
+
+  /* ============================================================
+     BOOT SEQUENCE
+  ============================================================ */
+  async function boot(){
+    const steps = [
+      { pct:12,  msg:'Calibrating sensor array… OK', delay:260 },
+      { pct:28,  msg:'Loading neural network runtime… OK', delay:220 },
+    ];
+    for(const s of steps){
+      log(s.msg, 'ok');
+      els.bootBarFill.style.width = s.pct + '%';
+      await wait(s.delay);
+    }
+
+    setStatus('LOADING MODELS', 'Downloading facial recognition networks…');
+    if(typeof faceapi === 'undefined'){
+      return bootFailure('Face recognition library failed to load.');
+    }
+
+    try{
+      log('Loading face detector model…');
+      await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+      els.bootBarFill.style.width = '55%';
+      log('Face detector online', 'ok');
+
+      log('Loading landmark model…');
+      await faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL);
+      els.bootBarFill.style.width = '72%';
+      log('Landmark model online', 'ok');
+
+      log('Loading recognition model (this one is larger)…');
+      await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+      els.bootBarFill.style.width = '90%';
+      log('Recognition model online', 'ok');
+    } catch(err){
+      return bootFailure('Model download failed — check network access.');
+    }
+
+    setStatus('REQUESTING OPTICAL SENSOR', 'Grant camera access to continue…');
+    log('Requesting camera permission…');
+    try{
+      const stream = await navigator.mediaDevices.getUserMedia({ video:{ width:480, height:480, facingMode:'user' }, audio:false });
+      els.video.srcObject = stream;
+      await els.video.play();
+      els.video.classList.add('live');
+      els.overlay.width = els.video.videoWidth || 480;
+      els.overlay.height = els.video.videoHeight || 480;
+    } catch(err){
+      return bootFailure('Camera access denied or unavailable.');
+    }
+
+    els.bootBarFill.style.width = '100%';
+    log('All systems nominal', 'ok');
+    await wait(300);
+    els.bootBar.style.display = 'none';
+    els.idle.classList.remove('pulse');
+    els.sweep.classList.add('active');
+    beginScanning();
+  }
+
+  function bootFailure(reason){
+    log(reason, 'warn');
+    setStatus('SENSOR OFFLINE', reason);
+    els.note.textContent = 'Facial recognition isn\'t available right now. This can happen inside a sandboxed preview, over a plain (non-https) connection, or if camera permission was blocked. You can still continue as a guest below.';
+    els.note.classList.add('show');
+    els.bootBar.style.display = 'none';
+    els.idle.classList.remove('pulse');
+  }
+
+  /* ============================================================
+     LIVE SCANNING / RECOGNITION LOOP
+  ============================================================ */
+  let scanning = false;
+  let detectTimer = null;
+  let matchStreak = 0;
+  let matchStreakName = null;
+  let strangerSince = null;
+  let mode = 'SCAN'; // SCAN | ENROLL | DENIED | GRANTED
+
+  function beginScanning(){
+    mode = 'SCAN';
+    matchStreak = 0; matchStreakName = null; strangerSince = null;
+    els.enrollPanel.style.display = 'none';
+    els.deniedPanel.style.display = 'none';
+    const profiles = loadProfiles();
+    setStatus('SCANNING', profiles.length ? 'Hold still and look at the sensor…' : 'No operators registered — show your face to begin setup.');
+    scanning = true;
+    if(detectTimer) clearInterval(detectTimer);
+    detectTimer = setInterval(detectTick, DETECT_INTERVAL_MS);
+  }
+
+  function stopDetectionLoop(){
+    scanning = false;
+    if(detectTimer){ clearInterval(detectTimer); detectTimer = null; }
+  }
+
+  function drawBox(box, color, videoW, videoH){
+    ctx.clearRect(0,0,els.overlay.width, els.overlay.height);
+    if(!box) return;
+    // video is CSS-mirrored; flip the box horizontally so it lines up
+    const flippedX = els.overlay.width - (box.x + box.width);
+    const x = flippedX, y = box.y, w = box.width, h = box.height;
+    ctx.strokeStyle = color; ctx.lineWidth = 2;
+    const c = Math.min(22, w*0.25, h*0.25);
+    // corner-bracket box (not a plain rect — keeps the HUD look)
+    ctx.beginPath();
+    ctx.moveTo(x, y+c); ctx.lineTo(x,y); ctx.lineTo(x+c,y);
+    ctx.moveTo(x+w-c, y); ctx.lineTo(x+w,y); ctx.lineTo(x+w,y+c);
+    ctx.moveTo(x+w, y+h-c); ctx.lineTo(x+w,y+h); ctx.lineTo(x+w-c,y+h);
+    ctx.moveTo(x+c, y+h); ctx.lineTo(x,y+h); ctx.lineTo(x,y+h-c);
+    ctx.stroke();
+  }
+
+  async function detectTick(){
+    if(!scanning || mode !== 'SCAN') return;
+    if(els.video.readyState < 2) return;
+
+    let result = null;
+    try{
+      result = await faceapi.detectSingleFace(els.video, new faceapi.TinyFaceDetectorOptions({ inputSize:224, scoreThreshold:0.55 }))
+        .withFaceLandmarks(true)
+        .withFaceDescriptor();
+    } catch(e){ result = null; }
+
+    if(!result){
+      drawBox(null);
+      els.idle.style.display = 'flex';
+      matchStreak = 0; matchStreakName = null; strangerSince = null;
+      setStatus('SCANNING', loadProfiles().length ? 'Hold still and look at the sensor…' : 'No operators registered — show your face to begin setup.');
+      return;
+    }
+
+    els.idle.style.display = 'none';
+    const profiles = loadProfiles();
+
+    if(profiles.length === 0){
+      drawBox(result.detection.box, '#ffaa00');
+      setStatus('NO PROFILE FOUND', 'Register yourself as the first operator.');
+      openEnroll();
+      return;
+    }
+
+    const { profile, distance } = bestMatch(result.descriptor, profiles);
+    const isMatch = profile && distance < MATCH_THRESHOLD;
+
+    if(isMatch){
+      drawBox(result.detection.box, '#35ff8a');
+      strangerSince = null;
+      if(matchStreakName === profile.name){ matchStreak++; } else { matchStreakName = profile.name; matchStreak = 1; }
+      setStatus('IDENTITY MATCH', `${profile.name} — confidence ${(100-(distance*100)).toFixed(0)}%`);
+      if(matchStreak >= MATCH_CONFIRM_FRAMES){
+        grantAccess(profile.name);
+      }
+    } else {
+      drawBox(result.detection.box, '#ff3b30');
+      matchStreak = 0; matchStreakName = null;
+      if(!strangerSince) strangerSince = performance.now();
+      const elapsed = performance.now() - strangerSince;
+      setStatus('FACE NOT RECOGNIZED', 'Analyzing…');
+      if(elapsed > NO_MATCH_GRACE_MS){
+        showDenied();
+      }
+    }
+  }
+
+  function showDenied(){
+    mode = 'DENIED';
+    scanning = false;
+    setStatus('ACCESS DENIED', 'This face does not match any registered operator.');
+    els.deniedPanel.style.display = 'flex';
+  }
+
+  els.retryBtn.addEventListener('click', ()=>{
+    els.deniedPanel.style.display = 'none';
+    beginScanning();
+  });
+  els.registerNewBtn.addEventListener('click', ()=>{
+    els.deniedPanel.style.display = 'none';
+    mode = 'SCAN';
+    scanning = true;
+    openEnroll();
+  });
+
+  /* ============================================================
+     ENROLLMENT
+  ============================================================ */
+  function openEnroll(){
+    if(mode === 'ENROLL') return;
+    mode = 'ENROLL';
+    scanning = false;
+    els.enrollPanel.style.display = 'flex';
+    resetDots();
+  }
+
+  function resetDots(){
+    els.dwellDots.forEach(d => d.classList.remove('filled'));
+  }
+
+  els.beginEnrollBtn.addEventListener('click', runEnrollment);
+
+  async function runEnrollment(){
+    const name = (els.nameInput.value || 'OPERATOR').trim().slice(0,24) || 'OPERATOR';
+    els.beginEnrollBtn.disabled = true;
+    els.beginEnrollBtn.textContent = 'HOLD STILL…';
+    resetDots();
+
+    const samples = [];
+    let attempts = 0;
+    while(samples.length < ENROLL_SAMPLES && attempts < ENROLL_SAMPLES * 6){
+      attempts++;
+      if(els.video.readyState >= 2){
+        let result = null;
+        try{
+          result = await faceapi.detectSingleFace(els.video, new faceapi.TinyFaceDetectorOptions({ inputSize:224, scoreThreshold:0.55 }))
+            .withFaceLandmarks(true)
+            .withFaceDescriptor();
+        } catch(e){ result = null; }
+
+        if(result){
+          drawBox(result.detection.box, '#ffe0a0');
+          samples.push(Array.from(result.descriptor));
+          els.dwellDots[samples.length-1].classList.add('filled');
+          setStatus('CAPTURING', `Sample ${samples.length} of ${ENROLL_SAMPLES}`);
+        } else {
+          setStatus('CAPTURING', 'Face not detected — hold still and face the sensor.');
+        }
+      }
+      await wait(320);
+    }
+
+    if(samples.length < ENROLL_SAMPLES){
+      setStatus('ENROLLMENT FAILED', 'Could not capture enough clean samples. Try again.');
+      log('Enrollment aborted — insufficient samples', 'warn');
+      els.beginEnrollBtn.disabled = false;
+      els.beginEnrollBtn.textContent = 'BEGIN ENROLLMENT SCAN';
+      return;
+    }
+
+    // average the samples into one reference descriptor
+    const dim = samples[0].length;
+    const avg = new Array(dim).fill(0);
+    samples.forEach(s => { for(let i=0;i<dim;i++) avg[i] += s[i]/samples.length; });
+
+    const profiles = loadProfiles();
+    profiles.push({ name, descriptor:avg, enrolledAt:new Date().toISOString() });
+    const ok = saveProfiles(profiles);
+    if(!ok){
+      log('Could not persist profile to local storage', 'warn');
+    } else {
+      log(`New operator enrolled — ${name}`, 'ok');
+    }
+
+    els.enrollPanel.style.display = 'none';
+    els.beginEnrollBtn.disabled = false;
+    els.beginEnrollBtn.textContent = 'BEGIN ENROLLMENT SCAN';
+    grantAccess(name);
+  }
+
+  /* ============================================================
+     FOOTER CONTROLS
+  ============================================================ */
+  els.guestLink.addEventListener('click', ()=>{
+    stopDetectionLoop();
+    setStatus('CONTINUING AS GUEST', 'Skipping biometric verification…');
+    goToDashboard(null);
+  });
+
+  els.resetLink.addEventListener('click', ()=>{
+    if(confirm('Erase all registered operator profiles on this device? This cannot be undone.')){
+      try{ localStorage.removeItem(PROFILES_KEY); localStorage.removeItem(ACTIVE_USER_KEY); }catch(e){}
+      log('All operator profiles erased', 'warn');
+      beginScanning();
+    }
+  });
+
+  /* ============================================================
+     GO
+  ============================================================ */
+  log('Boot sequence started');
+  boot();
+
+})();
+</script>
+</body>
+</html>
