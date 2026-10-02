@@ -2,10 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#020202">
+<meta name="color-scheme" content="dark">
+<meta name="referrer" content="no-referrer">
 <title>J.A.R.V.I.S. // BIOMETRIC ACCESS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Share+Tech+Mono&display=swap');
 
   :root{
     --amber:        #ffaa00;
@@ -20,6 +25,10 @@
   }
 
   *{ box-sizing:border-box; margin:0; padding:0; }
+
+  button, input{ font:inherit; }
+  button:focus-visible, input:focus-visible{ outline:2px solid var(--amber-bright); outline-offset:3px; }
+  button:disabled{ cursor:not-allowed; opacity:0.55; }
 
   html,body{
     width:100%; height:100%; overflow:hidden;
@@ -118,7 +127,7 @@
     color:var(--amber-bright); text-shadow:0 0 10px rgba(255,180,60,0.4);
     min-height:24px;
   }
-  #statusSub{ margin-top:8px; font-size:11px; letter-spacing:1.5px; color:var(--text-dim); min-height:16px; }
+  #statusSub{ margin-top:8px; font-size:11px; letter-spacing:1.5px; color:var(--text-dim); min-height:16px; line-height:1.5; }
 
   #bootBar{ width:340px; height:3px; background:rgba(255,170,0,0.12); margin-top:4px; }
   #bootBarFill{ height:100%; width:0%; background:linear-gradient(90deg,var(--amber-dim),var(--amber)); box-shadow:0 0 8px var(--amber); transition:width 0.35s ease; }
@@ -210,10 +219,16 @@
   }
   #noteBox.show{ display:block; }
 
-  @media (max-width: 520px){
-    #scanFrame{ width:88vw; height:88vw; max-width:380px; max-height:380px; }
+  @media (max-width: 520px), (max-height: 720px){
+    #header{ padding-top:18px; }
+    #stage{ gap:14px; padding:74px 0 72px; }
+    #scanFrame{ width:min(88vw, 52vh); height:min(88vw, 52vh); max-width:380px; max-height:380px; }
     #logPanel{ display:none; }
     #enrollPanel, #statusBlock{ width:88vw; max-width:340px; }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *, *::before, *::after{ animation-duration:0.01ms !important; animation-iteration-count:1 !important; transition-duration:0.01ms !important; scroll-behavior:auto !important; }
   }
 </style>
 </head>
@@ -250,7 +265,7 @@
     </div>
   </div>
 
-  <div id="statusBlock">
+  <div id="statusBlock" role="status" aria-live="polite" aria-atomic="true">
     <div id="statusTitle">INITIALIZING</div>
     <div id="statusSub">Preparing biometric subsystem…</div>
     <div id="bootBar"><div id="bootBarFill"></div></div>
@@ -258,16 +273,16 @@
   </div>
 
   <div id="enrollPanel">
-    <input id="nameInput" type="text" maxlength="24" placeholder="ENTER DESIGNATION" value="OPERATOR"/>
-    <button class="btn" id="beginEnrollBtn">BEGIN ENROLLMENT SCAN</button>
+    <input id="nameInput" type="text" maxlength="24" placeholder="ENTER DESIGNATION" value="OPERATOR" autocomplete="off" spellcheck="false" aria-label="Operator designation"/>
+    <button class="btn" id="beginEnrollBtn" type="button">BEGIN ENROLLMENT SCAN</button>
     <div id="dwellDots">
       <span></span><span></span><span></span><span></span><span></span>
     </div>
   </div>
 
   <div id="deniedPanel" style="display:none;" class="btn-row">
-    <button class="btn" id="retryBtn">TRY AGAIN</button>
-    <button class="btn" id="registerNewBtn">REGISTER AS NEW OPERATOR</button>
+    <button class="btn" id="retryBtn" type="button">TRY AGAIN</button>
+    <button class="btn" id="registerNewBtn" type="button">REGISTER AS NEW OPERATOR</button>
   </div>
 
 </div>
@@ -278,8 +293,8 @@
 </div>
 
 <div id="footerControls">
-  <button id="guestLink">ENTER AS GUEST →</button>
-  <button id="resetLink">RESET ALL PROFILES</button>
+  <button id="guestLink" type="button">ENTER AS GUEST →</button>
+  <button id="resetLink" type="button">RESET ALL PROFILES</button>
 </div>
 
 <div id="grantFlash"><div class="g-text" id="grantText">ACCESS GRANTED</div></div>
@@ -287,15 +302,22 @@
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js" crossorigin="anonymous"></script>
 <script>
 (function(){
+  'use strict';
 
-  const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js/weights';
-  const MATCH_THRESHOLD = 0.55;      // lower = stricter identity match
-  const MATCH_CONFIRM_FRAMES = 2;    // consecutive matching reads required to grant access
-  const NO_MATCH_GRACE_MS = 3200;    // how long a stranger's face must persist before "denied"
-  const ENROLL_SAMPLES = 5;
-  const DETECT_INTERVAL_MS = 380;
-  const PROFILES_KEY = 'jarvis_profiles';
-  const ACTIVE_USER_KEY = 'jarvis_active_user';
+  const CONFIG = Object.freeze({
+    modelUrl: 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights',
+    matchThreshold: 0.55,
+    matchConfirmFrames: 3,
+    noMatchGraceMs: 3200,
+    enrollSamples: 5,
+    enrollMaxAttempts: 40,
+    detectIntervalMs: 380,
+    redirectDelayMs: 1650,
+    maxProfiles: 8,
+    descriptorLength: 128,
+    profilesKey: 'jarvis_profiles',
+    activeUserKey: 'jarvis_active_user'
+  });
 
   const els = {
     video: document.getElementById('video'),
@@ -318,117 +340,230 @@
     resetLink: document.getElementById('resetLink'),
     logLines: document.getElementById('logLines'),
     grantFlash: document.getElementById('grantFlash'),
-    grantText: document.getElementById('grantText'),
+    grantText: document.getElementById('grantText')
   };
-  const ctx = els.overlay.getContext('2d');
 
-  /* ============================================================
-     small helpers
-  ============================================================ */
-  function log(msg, cls){
+  const ctx = els.overlay.getContext('2d');
+  const detectorOptions = () => new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.55 });
+
+  const state = {
+    mode: 'BOOT',
+    scanning: false,
+    scanGeneration: 0,
+    detectTimer: null,
+    mediaStream: null,
+    redirectTimer: null,
+    matchStreak: 0,
+    matchStreakName: null,
+    strangerSince: null,
+    pausedForVisibility: false,
+    destroyed: false
+  };
+
+  function nowTime(){ return new Date().toTimeString().slice(0, 8); }
+  function wait(ms){ return new Promise(resolve => setTimeout(resolve, ms)); }
+  function clamp(value, min, max){ return Math.max(min, Math.min(max, value)); }
+
+  function log(message, cls = ''){
     const line = document.createElement('div');
-    line.innerHTML = `<span class="${cls||''}">[${new Date().toTimeString().slice(0,8)}] ${msg}</span>`;
+    const span = document.createElement('span');
+    if(cls === 'ok' || cls === 'warn') span.className = cls;
+    span.textContent = `[${nowTime()}] ${String(message)}`;
+    line.appendChild(span);
     els.logLines.appendChild(line);
-    while(els.logLines.children.length > 8){ els.logLines.removeChild(els.logLines.firstChild); }
+    while(els.logLines.children.length > 8) els.logLines.firstChild.remove();
   }
-  function setStatus(title, sub){
+
+  function setStatus(title, sub = ''){
     els.title.textContent = title;
-    els.sub.textContent = sub || '';
+    els.sub.textContent = sub;
   }
-  function wait(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+  function sanitizeName(value){
+    return String(value ?? '')
+      .replace(/[\u0000-\u001F\u007F]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 24) || 'OPERATOR';
+  }
+
+  function normalizeDescriptor(value){
+    if(!Array.isArray(value) && !(value instanceof Float32Array)) return null;
+    if(value.length !== CONFIG.descriptorLength) return null;
+    const result = Array.from(value, Number);
+    return result.every(Number.isFinite) ? result : null;
+  }
+
+  function normalizeProfile(raw){
+    if(!raw || typeof raw !== 'object') return null;
+    const name = sanitizeName(raw.name);
+    const source = Array.isArray(raw.descriptors) ? raw.descriptors : [raw.descriptor];
+    const descriptors = source.map(normalizeDescriptor).filter(Boolean);
+    if(!descriptors.length) return null;
+    return {
+      name,
+      descriptors,
+      enrolledAt: typeof raw.enrolledAt === 'string' ? raw.enrolledAt : null
+    };
+  }
 
   function loadProfiles(){
-    try{ return JSON.parse(localStorage.getItem(PROFILES_KEY) || '[]'); }
-    catch(e){ return []; }
+    try{
+      const parsed = JSON.parse(localStorage.getItem(CONFIG.profilesKey) || '[]');
+      if(!Array.isArray(parsed)) return [];
+      return parsed.map(normalizeProfile).filter(Boolean).slice(0, CONFIG.maxProfiles);
+    } catch(error){
+      log('Stored profile data is unreadable; ignoring it for this session.', 'warn');
+      return [];
+    }
   }
-  function saveProfiles(list){
-    try{ localStorage.setItem(PROFILES_KEY, JSON.stringify(list)); return true; }
-    catch(e){ return false; }
+
+  function saveProfiles(profiles){
+    try{
+      localStorage.setItem(CONFIG.profilesKey, JSON.stringify(profiles));
+      return true;
+    } catch(error){
+      return false;
+    }
   }
-  function euclideanDistance(a,b){
+
+  function euclideanDistance(a, b){
+    if(!a || !b || a.length !== b.length) return Infinity;
     let sum = 0;
-    for(let i=0;i<a.length;i++){ const d = a[i]-b[i]; sum += d*d; }
+    for(let i = 0; i < a.length; i++){
+      const delta = a[i] - b[i];
+      sum += delta * delta;
+    }
     return Math.sqrt(sum);
   }
+
+  function distanceToProfile(descriptor, profile){
+    const distances = profile.descriptors
+      .map(candidate => euclideanDistance(descriptor, candidate))
+      .filter(Number.isFinite)
+      .sort((a, b) => a - b);
+    if(!distances.length) return Infinity;
+    const count = Math.min(3, distances.length);
+    return distances.slice(0, count).reduce((sum, value) => sum + value, 0) / count;
+  }
+
   function bestMatch(descriptor, profiles){
-    let best = null, bestDist = Infinity;
-    profiles.forEach(p=>{
-      const d = euclideanDistance(descriptor, p.descriptor);
-      if(d < bestDist){ bestDist = d; best = p; }
-    });
-    return { profile: best, distance: bestDist };
+    let bestProfile = null;
+    let bestDistance = Infinity;
+    for(const profile of profiles){
+      const distance = distanceToProfile(descriptor, profile);
+      if(distance < bestDistance){
+        bestDistance = distance;
+        bestProfile = profile;
+      }
+    }
+    return { profile: bestProfile, distance: bestDistance };
+  }
+
+  function setActiveUser(name){
+    try{
+      if(name) localStorage.setItem(CONFIG.activeUserKey, name);
+      else localStorage.removeItem(CONFIG.activeUserKey);
+    } catch(error){ /* session can still continue without persistent storage */ }
+  }
+
+  function stopCamera(){
+    if(state.mediaStream){
+      state.mediaStream.getTracks().forEach(track => track.stop());
+      state.mediaStream = null;
+    }
+    if(els.video.srcObject) els.video.srcObject = null;
   }
 
   function goToDashboard(name){
-    if(name){
-      try{ localStorage.setItem(ACTIVE_USER_KEY, name); }catch(e){}
-    } else {
-      try{ localStorage.removeItem(ACTIVE_USER_KEY); }catch(e){}
-    }
-    const url = 'dashboard.html' + (name ? ('?user=' + encodeURIComponent(name)) : '');
-    setTimeout(()=>{ window.location.href = url; }, 1650);
+    setActiveUser(name);
+    const url = name ? `dashboard.html?user=${encodeURIComponent(name)}` : 'dashboard.html';
+    clearTimeout(state.redirectTimer);
+    state.redirectTimer = setTimeout(() => {
+      stopCamera();
+      window.location.assign(url);
+    }, CONFIG.redirectDelayMs);
   }
 
   function grantAccess(name){
+    if(state.mode === 'GRANTED') return;
     stopDetectionLoop();
-    els.grantText.textContent = name ? `ACCESS GRANTED — WELCOME, ${name.toUpperCase()}` : 'ACCESS GRANTED';
+    state.mode = 'GRANTED';
+    const safeName = name ? sanitizeName(name) : '';
+    els.grantText.textContent = safeName ? `ACCESS GRANTED — WELCOME, ${safeName.toUpperCase()}` : 'ACCESS GRANTED';
     els.grantFlash.classList.add('show');
-    setStatus('ACCESS GRANTED', name ? `Welcome back, ${name}.` : 'Welcome.');
-    log(`Identity confirmed${name ? ' — ' + name : ''}`, 'ok');
-    goToDashboard(name);
+    setStatus('ACCESS GRANTED', safeName ? `Welcome back, ${safeName}.` : 'Welcome.');
+    log(`Identity confirmed${safeName ? ` — ${safeName}` : ''}`, 'ok');
+    goToDashboard(safeName || null);
   }
 
-  /* ============================================================
-     BOOT SEQUENCE
-  ============================================================ */
   async function boot(){
     const steps = [
-      { pct:12,  msg:'Calibrating sensor array… OK', delay:260 },
-      { pct:28,  msg:'Loading neural network runtime… OK', delay:220 },
+      { pct: 12, msg: 'Calibrating sensor array… OK', delay: 260 },
+      { pct: 28, msg: 'Loading neural network runtime… OK', delay: 220 }
     ];
-    for(const s of steps){
-      log(s.msg, 'ok');
-      els.bootBarFill.style.width = s.pct + '%';
-      await wait(s.delay);
+
+    for(const step of steps){
+      log(step.msg, 'ok');
+      els.bootBarFill.style.width = `${step.pct}%`;
+      await wait(step.delay);
     }
 
-    setStatus('LOADING MODELS', 'Downloading facial recognition networks…');
+    if(state.destroyed) return;
+    setStatus('LOADING MODELS', 'Downloading facial-recognition networks…');
+
     if(typeof faceapi === 'undefined'){
-      return bootFailure('Face recognition library failed to load.');
+      bootFailure('Face-recognition library failed to load.');
+      return;
     }
 
     try{
       log('Loading face detector model…');
-      await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+      await faceapi.nets.tinyFaceDetector.loadFromUri(CONFIG.modelUrl);
       els.bootBarFill.style.width = '55%';
       log('Face detector online', 'ok');
 
       log('Loading landmark model…');
-      await faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL);
+      await faceapi.nets.faceLandmark68TinyNet.loadFromUri(CONFIG.modelUrl);
       els.bootBarFill.style.width = '72%';
       log('Landmark model online', 'ok');
 
-      log('Loading recognition model (this one is larger)…');
-      await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+      log('Loading recognition model…');
+      await faceapi.nets.faceRecognitionNet.loadFromUri(CONFIG.modelUrl);
       els.bootBarFill.style.width = '90%';
       log('Recognition model online', 'ok');
-    } catch(err){
-      return bootFailure('Model download failed — check network access.');
+    } catch(error){
+      bootFailure('Model download failed. Check network access and content blockers.');
+      return;
+    }
+
+    if(!window.isSecureContext || !navigator.mediaDevices?.getUserMedia){
+      bootFailure('Camera APIs require HTTPS or localhost in a supported browser.');
+      return;
     }
 
     setStatus('REQUESTING OPTICAL SENSOR', 'Grant camera access to continue…');
     log('Requesting camera permission…');
+
     try{
-      const stream = await navigator.mediaDevices.getUserMedia({ video:{ width:480, height:480, facingMode:'user' }, audio:false });
-      els.video.srcObject = stream;
+      state.mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 480 },
+          height: { ideal: 480 },
+          facingMode: { ideal: 'user' }
+        },
+        audio: false
+      });
+      els.video.srcObject = state.mediaStream;
       await els.video.play();
       els.video.classList.add('live');
-      els.overlay.width = els.video.videoWidth || 480;
-      els.overlay.height = els.video.videoHeight || 480;
-    } catch(err){
-      return bootFailure('Camera access denied or unavailable.');
+      syncOverlaySize();
+    } catch(error){
+      bootFailure('Camera access was denied or no usable camera is available.');
+      return;
     }
 
+    if(state.destroyed) return;
     els.bootBarFill.style.width = '100%';
     log('All systems nominal', 'ok');
     await wait(300);
@@ -439,195 +574,252 @@
   }
 
   function bootFailure(reason){
+    stopDetectionLoop();
+    state.mode = 'OFFLINE';
     log(reason, 'warn');
     setStatus('SENSOR OFFLINE', reason);
-    els.note.textContent = 'Facial recognition isn\'t available right now. This can happen inside a sandboxed preview, over a plain (non-https) connection, or if camera permission was blocked. You can still continue as a guest below.';
+    els.note.textContent = 'Biometric recognition is unavailable. Serve this project over HTTPS or localhost, allow camera access, and make sure CDN resources are not blocked. Guest mode remains available.';
     els.note.classList.add('show');
     els.bootBar.style.display = 'none';
     els.idle.classList.remove('pulse');
   }
 
-  /* ============================================================
-     LIVE SCANNING / RECOGNITION LOOP
-  ============================================================ */
-  let scanning = false;
-  let detectTimer = null;
-  let matchStreak = 0;
-  let matchStreakName = null;
-  let strangerSince = null;
-  let mode = 'SCAN'; // SCAN | ENROLL | DENIED | GRANTED
+  function syncOverlaySize(){
+    const width = els.video.videoWidth || 480;
+    const height = els.video.videoHeight || 480;
+    if(els.overlay.width !== width) els.overlay.width = width;
+    if(els.overlay.height !== height) els.overlay.height = height;
+  }
+
+  function drawBox(box, color = '#ffaa00'){
+    syncOverlaySize();
+    ctx.clearRect(0, 0, els.overlay.width, els.overlay.height);
+    if(!box) return;
+
+    const scaleX = els.overlay.width / (els.video.videoWidth || els.overlay.width);
+    const scaleY = els.overlay.height / (els.video.videoHeight || els.overlay.height);
+    const x = els.overlay.width - ((box.x + box.width) * scaleX);
+    const y = box.y * scaleY;
+    const w = box.width * scaleX;
+    const h = box.height * scaleY;
+    const corner = Math.min(22, w * 0.25, h * 0.25);
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, els.overlay.width / 240);
+    ctx.beginPath();
+    ctx.moveTo(x, y + corner); ctx.lineTo(x, y); ctx.lineTo(x + corner, y);
+    ctx.moveTo(x + w - corner, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + corner);
+    ctx.moveTo(x + w, y + h - corner); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w - corner, y + h);
+    ctx.moveTo(x + corner, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y + h - corner);
+    ctx.stroke();
+  }
+
+  async function captureFace(){
+    if(els.video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return null;
+    return faceapi
+      .detectSingleFace(els.video, detectorOptions())
+      .withFaceLandmarks(true)
+      .withFaceDescriptor();
+  }
+
+  function isUsableFace(result){
+    if(!result?.detection?.box) return false;
+    const box = result.detection.box;
+    const widthRatio = box.width / (els.video.videoWidth || 480);
+    const heightRatio = box.height / (els.video.videoHeight || 480);
+    return widthRatio >= 0.18 && heightRatio >= 0.18;
+  }
+
+  function resetMatchState(){
+    state.matchStreak = 0;
+    state.matchStreakName = null;
+    state.strangerSince = null;
+  }
 
   function beginScanning(){
-    mode = 'SCAN';
-    matchStreak = 0; matchStreakName = null; strangerSince = null;
+    if(state.destroyed || state.mode === 'GRANTED') return;
+    stopDetectionLoop();
+    state.mode = 'SCAN';
+    state.scanning = true;
+    resetMatchState();
     els.enrollPanel.style.display = 'none';
     els.deniedPanel.style.display = 'none';
     const profiles = loadProfiles();
     setStatus('SCANNING', profiles.length ? 'Hold still and look at the sensor…' : 'No operators registered — show your face to begin setup.');
-    scanning = true;
-    if(detectTimer) clearInterval(detectTimer);
-    detectTimer = setInterval(detectTick, DETECT_INTERVAL_MS);
+    scheduleDetection(0, state.scanGeneration);
   }
 
   function stopDetectionLoop(){
-    scanning = false;
-    if(detectTimer){ clearInterval(detectTimer); detectTimer = null; }
+    state.scanning = false;
+    state.scanGeneration += 1;
+    if(state.detectTimer){
+      clearTimeout(state.detectTimer);
+      state.detectTimer = null;
+    }
   }
 
-  function drawBox(box, color, videoW, videoH){
-    ctx.clearRect(0,0,els.overlay.width, els.overlay.height);
-    if(!box) return;
-    // video is CSS-mirrored; flip the box horizontally so it lines up
-    const flippedX = els.overlay.width - (box.x + box.width);
-    const x = flippedX, y = box.y, w = box.width, h = box.height;
-    ctx.strokeStyle = color; ctx.lineWidth = 2;
-    const c = Math.min(22, w*0.25, h*0.25);
-    // corner-bracket box (not a plain rect — keeps the HUD look)
-    ctx.beginPath();
-    ctx.moveTo(x, y+c); ctx.lineTo(x,y); ctx.lineTo(x+c,y);
-    ctx.moveTo(x+w-c, y); ctx.lineTo(x+w,y); ctx.lineTo(x+w,y+c);
-    ctx.moveTo(x+w, y+h-c); ctx.lineTo(x+w,y+h); ctx.lineTo(x+w-c,y+h);
-    ctx.moveTo(x+c, y+h); ctx.lineTo(x,y+h); ctx.lineTo(x,y+h-c);
-    ctx.stroke();
+  function scheduleDetection(delay, generation){
+    if(!state.scanning || generation !== state.scanGeneration) return;
+    clearTimeout(state.detectTimer);
+    state.detectTimer = setTimeout(() => detectTick(generation), delay);
   }
 
-  async function detectTick(){
-    if(!scanning || mode !== 'SCAN') return;
-    if(els.video.readyState < 2) return;
+  async function detectTick(generation){
+    if(!state.scanning || state.mode !== 'SCAN' || generation !== state.scanGeneration) return;
+
+    if(document.hidden || els.video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA){
+      scheduleDetection(600, generation);
+      return;
+    }
 
     let result = null;
     try{
-      result = await faceapi.detectSingleFace(els.video, new faceapi.TinyFaceDetectorOptions({ inputSize:224, scoreThreshold:0.55 }))
-        .withFaceLandmarks(true)
-        .withFaceDescriptor();
-    } catch(e){ result = null; }
+      result = await captureFace();
+    } catch(error){
+      log('A face-detection frame failed; retrying.', 'warn');
+    }
 
-    if(!result){
+    if(!state.scanning || state.mode !== 'SCAN' || generation !== state.scanGeneration) return;
+
+    if(!result || !isUsableFace(result)){
       drawBox(null);
       els.idle.style.display = 'flex';
-      matchStreak = 0; matchStreakName = null; strangerSince = null;
-      setStatus('SCANNING', loadProfiles().length ? 'Hold still and look at the sensor…' : 'No operators registered — show your face to begin setup.');
+      resetMatchState();
+      const profiles = loadProfiles();
+      setStatus('SCANNING', profiles.length ? 'Hold still and look at the sensor…' : 'No operators registered — show your face to begin setup.');
+      scheduleDetection(CONFIG.detectIntervalMs, generation);
       return;
     }
 
     els.idle.style.display = 'none';
     const profiles = loadProfiles();
 
-    if(profiles.length === 0){
+    if(!profiles.length){
       drawBox(result.detection.box, '#ffaa00');
       setStatus('NO PROFILE FOUND', 'Register yourself as the first operator.');
       openEnroll();
       return;
     }
 
-    const { profile, distance } = bestMatch(result.descriptor, profiles);
-    const isMatch = profile && distance < MATCH_THRESHOLD;
+    const descriptor = normalizeDescriptor(result.descriptor);
+    const { profile, distance } = bestMatch(descriptor, profiles);
+    const isMatch = profile && distance < CONFIG.matchThreshold;
 
     if(isMatch){
       drawBox(result.detection.box, '#35ff8a');
-      strangerSince = null;
-      if(matchStreakName === profile.name){ matchStreak++; } else { matchStreakName = profile.name; matchStreak = 1; }
-      setStatus('IDENTITY MATCH', `${profile.name} — confidence ${(100-(distance*100)).toFixed(0)}%`);
-      if(matchStreak >= MATCH_CONFIRM_FRAMES){
+      state.strangerSince = null;
+      if(state.matchStreakName === profile.name) state.matchStreak += 1;
+      else {
+        state.matchStreakName = profile.name;
+        state.matchStreak = 1;
+      }
+      setStatus('IDENTITY MATCH', `${profile.name} — match distance ${distance.toFixed(3)}`);
+      if(state.matchStreak >= CONFIG.matchConfirmFrames){
         grantAccess(profile.name);
+        return;
       }
     } else {
       drawBox(result.detection.box, '#ff3b30');
-      matchStreak = 0; matchStreakName = null;
-      if(!strangerSince) strangerSince = performance.now();
-      const elapsed = performance.now() - strangerSince;
-      setStatus('FACE NOT RECOGNIZED', 'Analyzing…');
-      if(elapsed > NO_MATCH_GRACE_MS){
+      state.matchStreak = 0;
+      state.matchStreakName = null;
+      if(!state.strangerSince) state.strangerSince = performance.now();
+      const elapsed = performance.now() - state.strangerSince;
+      setStatus('FACE NOT RECOGNIZED', `Analyzing… ${Math.ceil(clamp((CONFIG.noMatchGraceMs - elapsed) / 1000, 0, 9))}s`);
+      if(elapsed >= CONFIG.noMatchGraceMs){
         showDenied();
+        return;
       }
     }
+
+    scheduleDetection(CONFIG.detectIntervalMs, generation);
   }
 
   function showDenied(){
-    mode = 'DENIED';
-    scanning = false;
+    stopDetectionLoop();
+    state.mode = 'DENIED';
     setStatus('ACCESS DENIED', 'This face does not match any registered operator.');
     els.deniedPanel.style.display = 'flex';
   }
 
-  els.retryBtn.addEventListener('click', ()=>{
-    els.deniedPanel.style.display = 'none';
-    beginScanning();
-  });
-  els.registerNewBtn.addEventListener('click', ()=>{
-    els.deniedPanel.style.display = 'none';
-    mode = 'SCAN';
-    scanning = true;
-    openEnroll();
-  });
-
-  /* ============================================================
-     ENROLLMENT
-  ============================================================ */
-  function openEnroll(){
-    if(mode === 'ENROLL') return;
-    mode = 'ENROLL';
-    scanning = false;
-    els.enrollPanel.style.display = 'flex';
-    resetDots();
-  }
-
   function resetDots(){
-    els.dwellDots.forEach(d => d.classList.remove('filled'));
+    els.dwellDots.forEach(dot => dot.classList.remove('filled'));
   }
 
-  els.beginEnrollBtn.addEventListener('click', runEnrollment);
+  function openEnroll(){
+    if(state.mode === 'ENROLL') return;
+    stopDetectionLoop();
+    state.mode = 'ENROLL';
+    els.enrollPanel.style.display = 'flex';
+    els.deniedPanel.style.display = 'none';
+    resetDots();
+    els.nameInput.focus({ preventScroll: true });
+  }
 
   async function runEnrollment(){
-    const name = (els.nameInput.value || 'OPERATOR').trim().slice(0,24) || 'OPERATOR';
+    if(state.mode !== 'ENROLL' || els.beginEnrollBtn.disabled) return;
+
+    const name = sanitizeName(els.nameInput.value);
+    els.nameInput.value = name;
+    const existingProfiles = loadProfiles();
+    const existingIndex = existingProfiles.findIndex(profile => profile.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+    if(existingIndex < 0 && existingProfiles.length >= CONFIG.maxProfiles){
+      setStatus('PROFILE LIMIT REACHED', `This demo stores at most ${CONFIG.maxProfiles} operator profiles. Reset profiles or reuse an existing name.`);
+      log('Enrollment blocked — profile limit reached', 'warn');
+      return;
+    }
+
     els.beginEnrollBtn.disabled = true;
     els.beginEnrollBtn.textContent = 'HOLD STILL…';
     resetDots();
 
     const samples = [];
     let attempts = 0;
-    while(samples.length < ENROLL_SAMPLES && attempts < ENROLL_SAMPLES * 6){
-      attempts++;
-      if(els.video.readyState >= 2){
-        let result = null;
-        try{
-          result = await faceapi.detectSingleFace(els.video, new faceapi.TinyFaceDetectorOptions({ inputSize:224, scoreThreshold:0.55 }))
-            .withFaceLandmarks(true)
-            .withFaceDescriptor();
-        } catch(e){ result = null; }
 
-        if(result){
+    while(samples.length < CONFIG.enrollSamples && attempts < CONFIG.enrollMaxAttempts && state.mode === 'ENROLL'){
+      attempts += 1;
+      let result = null;
+      try{
+        result = await captureFace();
+      } catch(error){ /* a later attempt may succeed */ }
+
+      if(result && isUsableFace(result)){
+        const descriptor = normalizeDescriptor(result.descriptor);
+        if(descriptor){
           drawBox(result.detection.box, '#ffe0a0');
-          samples.push(Array.from(result.descriptor));
-          els.dwellDots[samples.length-1].classList.add('filled');
-          setStatus('CAPTURING', `Sample ${samples.length} of ${ENROLL_SAMPLES}`);
-        } else {
-          setStatus('CAPTURING', 'Face not detected — hold still and face the sensor.');
+          samples.push(descriptor);
+          els.dwellDots[samples.length - 1]?.classList.add('filled');
+          setStatus('CAPTURING', `Sample ${samples.length} of ${CONFIG.enrollSamples}`);
         }
+      } else {
+        setStatus('CAPTURING', 'Face not detected clearly — center your face and hold still.');
       }
-      await wait(320);
+
+      await wait(340);
     }
 
-    if(samples.length < ENROLL_SAMPLES){
-      setStatus('ENROLLMENT FAILED', 'Could not capture enough clean samples. Try again.');
+    if(state.mode !== 'ENROLL') return;
+
+    if(samples.length < CONFIG.enrollSamples){
+      setStatus('ENROLLMENT FAILED', 'Could not capture enough clean samples. Adjust lighting and try again.');
       log('Enrollment aborted — insufficient samples', 'warn');
       els.beginEnrollBtn.disabled = false;
       els.beginEnrollBtn.textContent = 'BEGIN ENROLLMENT SCAN';
       return;
     }
 
-    // average the samples into one reference descriptor
-    const dim = samples[0].length;
-    const avg = new Array(dim).fill(0);
-    samples.forEach(s => { for(let i=0;i<dim;i++) avg[i] += s[i]/samples.length; });
-
     const profiles = loadProfiles();
-    profiles.push({ name, descriptor:avg, enrolledAt:new Date().toISOString() });
-    const ok = saveProfiles(profiles);
-    if(!ok){
-      log('Could not persist profile to local storage', 'warn');
+    const duplicateIndex = profiles.findIndex(profile => profile.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+    const record = { name, descriptors: samples, enrolledAt: new Date().toISOString() };
+    if(duplicateIndex >= 0) profiles[duplicateIndex] = record;
+    else profiles.push(record);
+
+    const persisted = saveProfiles(profiles);
+    if(persisted){
+      log(`${duplicateIndex >= 0 ? 'Operator profile updated' : 'New operator enrolled'} — ${name}`, 'ok');
     } else {
-      log(`New operator enrolled — ${name}`, 'ok');
+      log('Profile capture succeeded, but browser storage is unavailable.', 'warn');
+      setStatus('STORAGE UNAVAILABLE', 'Profile could not be saved permanently; continuing for this session.');
+      await wait(650);
     }
 
     els.enrollPanel.style.display = 'none';
@@ -636,29 +828,49 @@
     grantAccess(name);
   }
 
-  /* ============================================================
-     FOOTER CONTROLS
-  ============================================================ */
-  els.guestLink.addEventListener('click', ()=>{
+  els.retryBtn.addEventListener('click', beginScanning);
+  els.registerNewBtn.addEventListener('click', openEnroll);
+  els.beginEnrollBtn.addEventListener('click', runEnrollment);
+  els.nameInput.addEventListener('keydown', event => {
+    if(event.key === 'Enter') runEnrollment();
+  });
+
+  els.guestLink.addEventListener('click', () => {
     stopDetectionLoop();
+    state.mode = 'GRANTED';
     setStatus('CONTINUING AS GUEST', 'Skipping biometric verification…');
     goToDashboard(null);
   });
 
-  els.resetLink.addEventListener('click', ()=>{
-    if(confirm('Erase all registered operator profiles on this device? This cannot be undone.')){
-      try{ localStorage.removeItem(PROFILES_KEY); localStorage.removeItem(ACTIVE_USER_KEY); }catch(e){}
-      log('All operator profiles erased', 'warn');
+  els.resetLink.addEventListener('click', () => {
+    if(!window.confirm('Erase all registered operator profiles on this device? This cannot be undone.')) return;
+    try{
+      localStorage.removeItem(CONFIG.profilesKey);
+      localStorage.removeItem(CONFIG.activeUserKey);
+    } catch(error){ /* storage may be unavailable */ }
+    log('All operator profiles erased', 'warn');
+    if(state.mode !== 'OFFLINE') beginScanning();
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if(document.hidden && state.scanning){
+      state.pausedForVisibility = true;
+      stopDetectionLoop();
+    } else if(!document.hidden && state.pausedForVisibility && state.mode === 'SCAN'){
+      state.pausedForVisibility = false;
       beginScanning();
     }
   });
 
-  /* ============================================================
-     GO
-  ============================================================ */
+  window.addEventListener('pagehide', () => {
+    state.destroyed = true;
+    stopDetectionLoop();
+    clearTimeout(state.redirectTimer);
+    stopCamera();
+  }, { once: true });
+
   log('Boot sequence started');
   boot();
-
 })();
 </script>
 </body>

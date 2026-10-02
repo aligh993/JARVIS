@@ -2,9 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#020202">
+<meta name="color-scheme" content="dark">
+<meta name="referrer" content="no-referrer">
 <title>J.A.R.V.I.S. // CORE INTERFACE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Share+Tech+Mono&display=swap');
 
   :root{
     --amber:        #ffaa00;
@@ -19,6 +25,9 @@
   }
 
   *{ box-sizing:border-box; margin:0; padding:0; }
+  button{ font:inherit; }
+  button:focus-visible{ outline:2px solid var(--amber-bright); outline-offset:3px; }
+  button:disabled{ cursor:not-allowed; opacity:0.55; }
 
   html,body{
     width:100%; height:100%; overflow:hidden;
@@ -29,7 +38,7 @@
     -webkit-font-smoothing:antialiased;
   }
 
-  #stage{ position:fixed; inset:0; cursor: grab; }
+  #stage{ position:fixed; inset:0; cursor:grab; touch-action:none; user-select:none; -webkit-user-select:none; }
   #stage.dragging{ cursor: grabbing; }
   #stage canvas{ display:block; width:100%; height:100%; }
 
@@ -235,6 +244,10 @@
     .telemetry{ left:22px; right:22px; flex-wrap:wrap; gap:16px; }
     #panel{ width:100%; right:-100%; padding:80px 22px 22px 22px; }
   }
+
+  @media (prefers-reduced-motion: reduce){
+    *, *::before, *::after{ animation-duration:0.01ms !important; animation-iteration-count:1 !important; transition-duration:0.01ms !important; }
+  }
 </style>
 </head>
 <body>
@@ -270,7 +283,7 @@
   <div id="operatorBadge" style="pointer-events:auto;">
     <span class="op-label">OPERATOR</span>
     <span class="op-name" id="operatorName">GUEST</span>
-    <button id="signOutBtn" title="Sign out">SIGN OUT</button>
+    <button id="signOutBtn" type="button" title="Sign out">SIGN OUT</button>
   </div>
 
   <div class="status-strip">
@@ -286,8 +299,8 @@
   <div id="gesturePanel">
     <div class="gp-head"><span>OPTICAL SENSOR</span><b id="gpHandState">OFFLINE</b></div>
     <canvas id="gestureCanvas" width="200" height="120"></canvas>
-    <div id="gestureStatus">STANDBY</div>
-    <button id="gestureToggle">ENABLE GESTURE CONTROL</button>
+    <div id="gestureStatus" role="status" aria-live="polite">STANDBY</div>
+    <button id="gestureToggle" type="button" aria-pressed="false">ENABLE GESTURE CONTROL</button>
     <div id="gestureNote">Camera blocked or unavailable here. Download this file and open it directly in a browser tab (served over http/https, not double-clicked) to grant webcam access.</div>
   </div>
 
@@ -307,8 +320,8 @@
   </div>
 </div>
 
-<div id="panel">
-  <button class="close-btn" id="closeBtn">&#10005;</button>
+<div id="panel" role="dialog" aria-modal="false" aria-labelledby="pName" aria-hidden="true">
+  <button class="close-btn" id="closeBtn" type="button" aria-label="Close node details">&#10005;</button>
   <div class="eyebrow">NODE FILE <b id="pId">// 000</b></div>
   <h2 id="pName">—</h2>
   <div class="subid" id="pCategory">—</div>
@@ -333,7 +346,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
 <script>
 (function(){
 
@@ -422,10 +435,15 @@
      SESSION — operator identity handed off from index.html
   ============================================================ */
   (function initSession(){
+    const sanitizeName = value => String(value ?? '')
+      .replace(/[\u0000-\u001F\u007F]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 24);
     const params = new URLSearchParams(window.location.search);
-    let name = params.get('user');
+    let name = sanitizeName(params.get('user'));
     if(!name){
-      try{ name = localStorage.getItem('jarvis_active_user'); }catch(e){ name = null; }
+      try{ name = sanitizeName(localStorage.getItem('jarvis_active_user')); }catch(e){ name = ''; }
     }
     document.getElementById('operatorName').textContent = name ? name.toUpperCase() : 'GUEST';
 
@@ -439,13 +457,23 @@
      THREE.JS SCENE
   ============================================================ */
   const stage = document.getElementById("stage");
-  const scene = new THREE.Scene();
+  if(typeof THREE === 'undefined'){
+    stage.innerHTML = '<div style="position:absolute;inset:0;display:grid;place-items:center;padding:24px;text-align:center;color:#ffe0a0;letter-spacing:2px">3D RENDERER UNAVAILABLE — CHECK NETWORK ACCESS</div>';
+    return;
+  }
 
+  const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(48, window.innerWidth/window.innerHeight, 0.1, 4000);
   camera.position.set(0,0,340);
 
-  const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  let renderer;
+  try{
+    renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, powerPreference:'high-performance' });
+  } catch(error){
+    stage.innerHTML = '<div style="position:absolute;inset:0;display:grid;place-items:center;padding:24px;text-align:center;color:#ffe0a0;letter-spacing:2px">WEBGL IS UNAVAILABLE IN THIS BROWSER</div>';
+    return;
+  }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.35;
@@ -709,6 +737,7 @@
   {
     const lineGeoPoints = [];
     const K = 2;
+    const edgeKeys = new Set();
     let vIdx = 0;
     for(let i=0;i<nodePositions.length;i++){
       const dists = [];
@@ -719,6 +748,9 @@
       dists.sort((a,b)=>a.d-b.d);
       for(let k=0;k<K;k++){
         const j = dists[k].j;
+        const edgeKey = i < j ? `${i}:${j}` : `${j}:${i}`;
+        if(edgeKeys.has(edgeKey)) continue;
+        edgeKeys.add(edgeKey);
         nodeEdges.push({ a:i, b:j });
         lineGeoPoints.push(nodePositions[i].x, nodePositions[i].y, nodePositions[i].z);
         nodeLineVertexIndices[i].push(vIdx); vIdx++;
@@ -829,39 +861,41 @@
   let targetRotX = 0;
   let targetRotY = 0;
   let targetZoom = camera.position.z;
-  const ROT_DAMP  = 0.14;
-  const ZOOM_DAMP = 0.16;
+  const ROT_RESPONSE  = 9.0;
+  const ZOOM_RESPONSE = 10.5;
   const ZOOM_MIN = 180, ZOOM_MAX = 820;
 
   function clientToNDC(x,y){ return [ (x/window.innerWidth)*2 - 1, -(y/window.innerHeight)*2 + 1 ]; }
 
   function pointerDown(e){
+    if(e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
     isDragging = true;
     moved = 0;
-    const p = e.touches ? e.touches[0] : e;
-    prev.x = p.clientX; prev.y = p.clientY;
+    prev.x = e.clientX; prev.y = e.clientY;
     stage.classList.add('dragging');
+    try{ stage.setPointerCapture(e.pointerId); }catch(err){}
 
-    const [ndcX, ndcY] = clientToNDC(p.clientX, p.clientY);
+    const [ndcX, ndcY] = clientToNDC(e.clientX, e.clientY);
     const idx = raycastNodeAtNDC(ndcX, ndcY);
+    autoRotate = false;
     if(idx >= 0){
       draggingNodeIndex = idx;
       nodeMeshes[idx].scale.set(1.8,1.8,1.8);
     } else {
       draggingNodeIndex = -1;
-      autoRotate = false;
     }
   }
   function pointerMove(e){
     if(!isDragging) return;
-    const p = e.touches ? e.touches[0] : e;
-    const dx = p.clientX - prev.x;
-    const dy = p.clientY - prev.y;
+    e.preventDefault();
+    const dx = e.clientX - prev.x;
+    const dy = e.clientY - prev.y;
     moved += Math.abs(dx) + Math.abs(dy);
-    prev.x = p.clientX; prev.y = p.clientY;
+    prev.x = e.clientX; prev.y = e.clientY;
 
     if(draggingNodeIndex >= 0){
-      const [ndcX, ndcY] = clientToNDC(p.clientX, p.clientY);
+      const [ndcX, ndcY] = clientToNDC(e.clientX, e.clientY);
       const localPos = projectToNodeDragPlane(ndcX, ndcY, draggingNodeIndex);
       if(localPos) setNodePosition(draggingNodeIndex, localPos);
       return;
@@ -871,31 +905,32 @@
     targetRotX = Math.max(-1.3, Math.min(1.3, targetRotX));
   }
   function pointerUp(e){
+    if(!isDragging) return;
+    e.preventDefault();
+    const cancelled = e.type === 'pointercancel';
     isDragging = false;
     stage.classList.remove('dragging');
-    const p = e.changedTouches ? e.changedTouches[0] : e;
+    try{ stage.releasePointerCapture(e.pointerId); }catch(err){}
 
     if(draggingNodeIndex >= 0){
       const idx = draggingNodeIndex;
       draggingNodeIndex = -1;
-      if(moved < 6){
+      if(!cancelled && moved < 6){
         selectNode(idx); // was a click, not a drag
       } else {
         nodeMeshes[idx].scale.set(selectedIndex === idx ? 2.4 : 1, selectedIndex === idx ? 2.4 : 1, selectedIndex === idx ? 2.4 : 1);
         spawnPing(nodeMeshes[idx].position, 0xffe0a0);
       }
-    } else if(moved < 6){
-      handleClick(p.clientX, p.clientY);
+    } else if(!cancelled && moved < 6){
+      handleClick(e.clientX, e.clientY);
     }
     setTimeout(()=>{ if(!isDragging) autoRotate = true; }, 2600);
   }
 
-  stage.addEventListener('mousedown', pointerDown);
-  window.addEventListener('mousemove', pointerMove);
-  window.addEventListener('mouseup', pointerUp);
-  stage.addEventListener('touchstart', pointerDown, {passive:true});
-  window.addEventListener('touchmove', pointerMove, {passive:true});
-  window.addEventListener('touchend', pointerUp);
+  stage.addEventListener('pointerdown', pointerDown);
+  window.addEventListener('pointermove', pointerMove, { passive:false });
+  window.addEventListener('pointerup', pointerUp, { passive:false });
+  window.addEventListener('pointercancel', pointerUp, { passive:false });
 
   stage.addEventListener('wheel', (e)=>{
     e.preventDefault();
@@ -907,6 +942,18 @@
   const mouseNDC = new THREE.Vector2();
   const tooltip = document.getElementById('tooltip');
   let selectedIndex = -1;
+
+  function showTooltip(clientX, clientY, text){
+    tooltip.textContent = text;
+    tooltip.style.display = 'block';
+    const margin = 10;
+    const desiredX = clientX + 16;
+    const desiredY = clientY + 16;
+    const x = Math.min(desiredX, window.innerWidth - tooltip.offsetWidth - margin);
+    const y = Math.min(desiredY, window.innerHeight - tooltip.offsetHeight - margin);
+    tooltip.style.left = Math.max(margin, x) + 'px';
+    tooltip.style.top = Math.max(margin, y) + 'px';
+  }
 
   // shared helper: given normalized device coords, return hovered node index or -1
   function raycastNodeAtNDC(ndcX, ndcY){
@@ -925,10 +972,7 @@
     if(isDragging){ tooltip.style.display='none'; return; }
     const idx = raycastNodeAtNDC((e.clientX/window.innerWidth)*2 - 1, -(e.clientY/window.innerHeight)*2 + 1);
     if(idx >= 0){
-      tooltip.style.display = 'block';
-      tooltip.style.left = (e.clientX+16)+'px';
-      tooltip.style.top = (e.clientY+16)+'px';
-      tooltip.textContent = NODE_DATA[idx].name;
+      showTooltip(e.clientX, e.clientY, NODE_DATA[idx].name);
       stage.style.cursor = 'pointer';
     } else {
       tooltip.style.display='none';
@@ -969,12 +1013,22 @@
     setStat('sSignal','sSignalVal', d.signal);
 
     const now = new Date();
-    document.getElementById('pLog').innerHTML =
-      `<span>[${fmtTime(now)}]</span> Node handshake confirmed<br>` +
-      `<span>[${fmtTime(new Date(now-42000))}]</span> Diagnostic sweep complete<br>` +
-      `<span>[${fmtTime(new Date(now-190000))}]</span> Telemetry sync established`;
+    const logEl = document.getElementById('pLog');
+    logEl.replaceChildren();
+    [
+      [now, 'Node handshake confirmed'],
+      [new Date(now - 42000), 'Diagnostic sweep complete'],
+      [new Date(now - 190000), 'Telemetry sync established']
+    ].forEach(([time, message]) => {
+      const row = document.createElement('div');
+      const stamp = document.createElement('span');
+      stamp.textContent = `[${fmtTime(time)}]`;
+      row.append(stamp, document.createTextNode(` ${message}`));
+      logEl.appendChild(row);
+    });
 
     panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
   }
 
   function setStat(barId, valId, value){
@@ -987,9 +1041,14 @@
   closeBtn.addEventListener('click', closePanel);
   function closePanel(){
     panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
     if(selectedIndex>=0) nodeMeshes[selectedIndex].scale.set(1,1,1);
     selectedIndex = -1;
   }
+
+  document.addEventListener('keydown', (event)=>{
+    if(event.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
 
   /* ============================================================
      CLOCK + TELEMETRY
@@ -1088,6 +1147,8 @@
   let mediaStream = null;
   let handsModel = null;
   let gestureActive = false;
+  let gestureStarting = false;
+  const HANDS_ASSET_BASE = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240';
   let lastHandSeenAt = 0;
 
   // continuous-signal smoothing state
@@ -1320,10 +1381,7 @@
         const localPos = projectToNodeDragPlane(ndcX, ndcY, grabbedNodeIndex);
         if(localPos) setNodePosition(grabbedNodeIndex, localPos);
 
-        tooltip.style.display = 'block';
-        tooltip.style.left = (smoothedGrabCursor.x+20)+'px';
-        tooltip.style.top = (smoothedGrabCursor.y+20)+'px';
-        tooltip.textContent = 'MOVING: ' + NODE_DATA[grabbedNodeIndex].name;
+        showTooltip(smoothedGrabCursor.x, smoothedGrabCursor.y, 'MOVING: ' + NODE_DATA[grabbedNodeIndex].name);
         gpStatus.textContent = 'GRABBING ' + NODE_DATA[grabbedNodeIndex].name + ' — MOVE TO REPOSITION';
         lastPinchRatio = null; // don't let a grab's pinch distance leak into zoom once released
 
@@ -1372,10 +1430,7 @@
       const idx = raycastNodeAtNDC(ndcX, ndcY);
 
       if(idx >= 0){
-        tooltip.style.display = 'block';
-        tooltip.style.left = (screenX+20)+'px';
-        tooltip.style.top = (screenY+20)+'px';
-        tooltip.textContent = NODE_DATA[idx].name;
+        showTooltip(screenX, screenY, NODE_DATA[idx].name);
 
         if(idx !== dwellIndex){
           dwellIndex = idx; dwellStart = performance.now(); dwellLocked = false;
@@ -1410,66 +1465,118 @@
 
   async function gestureLoop(){
     if(!gestureActive) return;
-    if(videoEl && videoEl.readyState >= 2){
-      await handsModel.send({ image: videoEl });
+    try{
+      if(videoEl && videoEl.readyState >= 2 && handsModel){
+        await handsModel.send({ image: videoEl });
+      }
+    } catch(error){
+      gpStatus.textContent = 'TRACKING ERROR — RESTART SENSOR';
+      gpNote.textContent = 'Hand tracking stopped unexpectedly. Disable and re-enable gesture control, and make sure CDN resources are reachable.';
+      gpNote.classList.add('show');
+      disableGestureControl(true);
+      return;
     }
-    requestAnimationFrame(gestureLoop);
+    if(gestureActive) requestAnimationFrame(gestureLoop);
   }
 
   async function enableGestureControl(){
+    if(gestureActive || gestureStarting) return;
+    gestureStarting = true;
+    gpToggle.disabled = true;
     gpNote.classList.remove('show');
-    gpStatus.textContent = 'REQUESTING CAMERA ACCESS…';
-    try{
-      mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { width:480, height:360, facingMode:'user' }, audio:false
-      });
-    } catch(err){
-      gpStatus.textContent = 'CAMERA ACCESS DENIED';
-      gpNote.classList.add('show');
-      return;
-    }
-
-    videoEl = document.createElement('video');
-    videoEl.srcObject = mediaStream;
-    videoEl.muted = true;
-    videoEl.playsInline = true;
-    await videoEl.play();
+    gpStatus.textContent = 'INITIALIZING HAND TRACKER…';
 
     if(typeof Hands === 'undefined'){
       gpStatus.textContent = 'TRACKING LIBRARY UNAVAILABLE';
+      gpNote.textContent = 'The MediaPipe Hands library could not be loaded. Check network access or content blockers.';
       gpNote.classList.add('show');
-      mediaStream.getTracks().forEach(t=>t.stop());
+      gestureStarting = false;
+      gpToggle.disabled = false;
       return;
     }
 
-    handsModel = new Hands({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-    });
-    handsModel.setOptions({
-      maxNumHands: 1,
-      modelComplexity: 1,
-      minDetectionConfidence: 0.65,
-      minTrackingConfidence: 0.65
-    });
-    handsModel.onResults(onHandResults);
+    if(!window.isSecureContext || !navigator.mediaDevices?.getUserMedia){
+      gpStatus.textContent = 'CAMERA API UNAVAILABLE';
+      gpNote.textContent = 'Gesture control requires HTTPS or localhost in a browser with camera support.';
+      gpNote.classList.add('show');
+      gestureStarting = false;
+      gpToggle.disabled = false;
+      return;
+    }
+
+    try{
+      handsModel = new Hands({ locateFile: file => `${HANDS_ASSET_BASE}/${file}` });
+      handsModel.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.65,
+        minTrackingConfidence: 0.65
+      });
+      handsModel.onResults(onHandResults);
+
+      gpStatus.textContent = 'REQUESTING CAMERA ACCESS…';
+      mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 480 },
+          height: { ideal: 360 },
+          facingMode: { ideal: 'user' }
+        },
+        audio: false
+      });
+
+      videoEl = document.createElement('video');
+      videoEl.srcObject = mediaStream;
+      videoEl.muted = true;
+      videoEl.playsInline = true;
+      await videoEl.play();
+    } catch(error){
+      if(mediaStream) mediaStream.getTracks().forEach(track => track.stop());
+      mediaStream = null;
+      videoEl = null;
+      if(handsModel?.close){ try{ handsModel.close(); }catch(err){} }
+      handsModel = null;
+      gpStatus.textContent = 'CAMERA OR TRACKER UNAVAILABLE';
+      gpNote.textContent = 'Could not start gesture control. Allow camera access and make sure MediaPipe assets are reachable.';
+      gpNote.classList.add('show');
+      gestureStarting = false;
+      gpToggle.disabled = false;
+      return;
+    }
 
     gestureActive = true;
+    gestureStarting = false;
+    gpToggle.disabled = false;
     gpToggle.textContent = 'DISABLE GESTURE CONTROL';
     gpToggle.classList.add('active');
+    gpToggle.setAttribute('aria-pressed', 'true');
     gpHandState.textContent = 'ARMED';
     gpStatus.textContent = 'STANDBY — SHOW HAND TO SENSOR';
-    gestureLoop();
+    requestAnimationFrame(gestureLoop);
   }
 
-  function disableGestureControl(){
+  function disableGestureControl(preserveErrorStatus = false){
     gestureActive = false;
-    if(mediaStream){ mediaStream.getTracks().forEach(t=>t.stop()); mediaStream = null; }
-    videoEl = null;
+    gestureStarting = false;
+    if(mediaStream){ mediaStream.getTracks().forEach(track => track.stop()); mediaStream = null; }
+    if(videoEl){
+      try{ videoEl.pause(); }catch(error){}
+      videoEl.srcObject = null;
+      videoEl = null;
+    }
+    if(handsModel?.close){
+      try{
+        const maybePromise = handsModel.close();
+        if(maybePromise?.catch) maybePromise.catch(()=>{});
+      } catch(error){}
+    }
+    handsModel = null;
     gCtx.clearRect(0,0,gCanvas.width, gCanvas.height);
+    gpToggle.disabled = false;
     gpToggle.textContent = 'ENABLE GESTURE CONTROL';
     gpToggle.classList.remove('active');
+    gpToggle.setAttribute('aria-pressed', 'false');
     gpHandState.textContent = 'OFFLINE';
-    gpStatus.textContent = 'STANDBY';
+    if(!preserveErrorStatus) gpStatus.textContent = 'STANDBY';
     smoothedPinchRatio = null; lastPinchRatio = null;
     smoothedPalm = null; lastPalm = null;
     smoothedCursor = null;
@@ -1485,9 +1592,6 @@
     else enableGestureControl();
   });
 
-  /* ============================================================
-     RENDER LOOP
-  ============================================================ */
   /* ============================================================
      RENDER LOOP
 
@@ -1539,9 +1643,10 @@
       });
 
       nodeMeshes.forEach((mesh, i) => {
-        const nT = Math.max(0, Math.min(1, (elapsed - nodeIntroDelay[i]) / 650));
+        const nT = Math.max(0, Math.min(1, (elapsed - nodeIntroDelay[i] * 1000) / 650));
         const e = Math.max(0, easeOutBack(nT));
-        mesh.scale.setScalar(e);
+        const interactionScale = (draggingNodeIndex === i || grabbedNodeIndex === i) ? 1.8 : (selectedIndex === i ? 2.4 : 1);
+        mesh.scale.setScalar(e * interactionScale);
         nodeGlows[i].material.opacity = Math.min(0.9, 0.9*easeOutCubic(nT));
       });
 
@@ -1557,7 +1662,10 @@
         introFadeMaterials.forEach(f => f.material.opacity = f.targetOpacity);
         wireRings.forEach(r => { r.mesh.material.opacity = r.targetOpacity; r.mesh.scale.setScalar(1); });
         accentRings.forEach(r => { r.mesh.material.opacity = r.targetOpacity; r.mesh.scale.setScalar(1); });
-        nodeMeshes.forEach(mesh => mesh.scale.setScalar(1));
+        nodeMeshes.forEach((mesh, i) => {
+          const interactionScale = (draggingNodeIndex === i || grabbedNodeIndex === i) ? 1.8 : (selectedIndex === i ? 2.4 : 1);
+          mesh.scale.setScalar(interactionScale);
+        });
         nodeGlows.forEach(s => s.material.opacity = 0.9);
       }
     }
@@ -1567,11 +1675,13 @@
       autoRotate = true;
     }
     if(autoRotate && !isDragging){
-      targetRotY += 0.0015;
+      targetRotY += 0.09 * dt;
     }
-    core.rotation.y += (targetRotY - core.rotation.y) * ROT_DAMP;
-    core.rotation.x += (targetRotX - core.rotation.x) * ROT_DAMP;
-    camera.position.z += (targetZoom - camera.position.z) * ZOOM_DAMP;
+    const rotAlpha = 1 - Math.exp(-ROT_RESPONSE * dt);
+    const zoomAlpha = 1 - Math.exp(-ZOOM_RESPONSE * dt);
+    core.rotation.y += (targetRotY - core.rotation.y) * rotAlpha;
+    core.rotation.x += (targetRotX - core.rotation.x) * rotAlpha;
+    camera.position.z += (targetZoom - camera.position.z) * zoomAlpha;
 
     /* ---------- subtle cinematic camera drift ---------- */
     camera.position.x = Math.sin(t*0.18) * 4;
@@ -1581,12 +1691,15 @@
     /* ---------- node glow pulse + core light flicker ---------- */
     nodeGlows.forEach((s, i)=>{
       const pulse = 1 + Math.sin(t*1.4 + i)*0.1;
-      s.scale.set(13*pulse, 13*pulse, 1);
+      const introScale = introActive
+        ? easeOutCubic(Math.max(0, Math.min(1, (elapsed - nodeIntroDelay[i] * 1000) / 650)))
+        : 1;
+      s.scale.set(13*pulse*introScale, 13*pulse*introScale, 1);
     });
     coreLight.intensity = (3.0 + Math.sin(t*1.3)*0.5) * (introActive ? Math.max(0, Math.min(1, elapsed/1200)) : 1);
 
     /* ---------- accent ring counter-rotation ---------- */
-    accentRings.forEach(r => { r.mesh.rotation.z += r.speed; });
+    accentRings.forEach(r => { r.mesh.rotation.z += r.speed * dt * 60; });
 
     /* ---------- traveling data pulses ---------- */
     if(!introActive){
@@ -1619,8 +1732,18 @@
   window.addEventListener('resize', ()=>{
     camera.aspect = window.innerWidth/window.innerHeight;
     camera.updateProjectionMatrix();
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
+    tooltip.style.display = 'none';
   });
+
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.hidden) tooltip.style.display = 'none';
+  });
+
+  window.addEventListener('pagehide', ()=>{
+    if(gestureActive || gestureStarting) disableGestureControl();
+  }, { once:true });
 
 })();
 </script>
